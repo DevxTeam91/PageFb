@@ -93,7 +93,7 @@ class NetworkManager {
     console.log(`[NetworkManager] Probing health endpoint: ${healthUrl}`);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
       const res = await fetch(healthUrl, { signal: controller.signal });
       clearTimeout(timeout);
       return res.ok;
