@@ -573,7 +573,8 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
       await apiForceSync();
       await loadConversations();
       await loadPages();
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError' || error.message === 'Aborted') return;
       console.error('[GlobalState] forceSync error:', error);
     }
   }, [loadConversations, loadPages]);
