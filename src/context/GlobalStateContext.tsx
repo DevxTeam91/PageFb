@@ -21,6 +21,7 @@ import {
   fetchPages,
   addPage,
   deletePage,
+  forceSync as apiForceSync,
 } from '../services/api';
 import { getSocket, reconnectSocket, subscribeToRealtimeEvents } from '../services/socket';
 import { database } from '../database';
@@ -567,7 +568,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const forceSync = useCallback(async () => {
     try {
-      await api.forceSync();
+      await apiForceSync();
       await loadConversations();
       await loadPages();
     } catch (error) {
