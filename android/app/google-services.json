@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "588187209376",
+    "project_id": "ch-s-bussiness-suit",
+    "storage_bucket": "ch-s-bussiness-suit.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:588187209376:android:1d065879d78ee5084cc3c5",
+        "android_client_info": {
+          "package_name": "com.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqDlYXEqEqWQjBHkDz4Uudp_L_KUOKQz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
