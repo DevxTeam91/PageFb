@@ -17,7 +17,6 @@ export async function fetchConversations(search?: string, pageId?: string, since
 
   const qs = params.length > 0 ? `?${params.join('&')}` : '';
   const res = await networkManager.fetchWithRetry(`/conversations${qs}`);
-  if (res.status === 499) throw new Error('AbortError');
   if (!res.ok) throw new Error('Failed to fetch conversations');
   const data = await res.json();
   return data.conversations || [];
@@ -27,7 +26,7 @@ export async function forceSync(): Promise<void> {
   const res = await networkManager.fetchWithRetry(`/conversations/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ force: true }),
+    body: JSON.stringify({ force: false }),
   });
   if (!res.ok) throw new Error('Failed to force sync');
 }

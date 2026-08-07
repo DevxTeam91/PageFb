@@ -183,7 +183,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         });
       }
     } catch (err: any) {
-      if (err.message === 'AbortError') return;
+      if (err.name === 'AbortError') return;
       console.warn('Failed to load pages, trying cache');
       const cached = await AsyncStorage.getItem('@cache_pages');
       if (cached) setPages(JSON.parse(cached));
@@ -220,7 +220,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         await database.batch(batch);
       });
     } catch (err: any) {
-      if (err.message === 'AbortError') return;
+      if (err.name === 'AbortError') return;
       console.warn('Failed to load conversations, trying cache');
       const cached = await AsyncStorage.getItem('@cache_conversations_' + selectedPageId);
       if (cached) setConversations(JSON.parse(cached));

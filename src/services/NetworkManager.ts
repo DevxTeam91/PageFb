@@ -154,13 +154,8 @@ class NetworkManager {
         }
         
         if (err.name === 'AbortError') {
-          // Return a safe mock response to suppress unhandled promise rejections
           if (method === 'GET') this.abortControllers.delete(requestId);
-          return new Response(JSON.stringify({ error: 'Request aborted' }), {
-            status: 499,
-            statusText: 'Client Closed Request',
-            headers: { 'Content-Type': 'application/json' }
-          });
+          throw err;
         }
 
         if (attempt < maxRetries) {
