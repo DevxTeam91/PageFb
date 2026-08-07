@@ -156,6 +156,52 @@ export function parseWebhookPayload(payload: any): ParsedWebhookEvent[] {
           });
         }
       }
+      // Handle optin (e.g. from Ads)
+      else if (messagingEvent.optin) {
+        const optin = messagingEvent.optin;
+        const fbMessageId = `optin.${Date.now()}`;
+        const text = optin.payload || optin.ref || '[Ad Reply / Opt-in]';
+        const userPsid = senderId;
+
+        if (userPsid) {
+          parsedEvents.push({
+            type: 'message',
+            pageId,
+            userPsid,
+            senderId,
+            recipientId,
+            timestamp,
+            fbMessageId,
+            text,
+            isEcho: false,
+            rawEvent: messagingEvent,
+          });
+        }
+      }
+      // Handle referral (e.g. m.me links or ad clicks without message)
+      else if (messagingEvent.referral) {
+        const referral = messagingEvent.referral;
+        const fbMessageId = `referral.${Date.now()}`;
+        const text = referral.ref || referral.ad_id ? `[Ad/Referral Click: ${referral.ad_id || referral.ref}]` : '[Referral Click]';
+        const userPsid = senderId;
+
+        if (userPsid) {
+          parsedEvents.push({
+            type: 'message',
+            pageId,
+            userPsid,
+            senderId,
+            recipientId,
+            timestamp,
+            fbMessageId,
+            text,
+            isEcho: false,
+            rawEvent: messagingEvent,
+          });
+        }
+      } else {
+        console.warn(`[Webhook] Dropped unsupported messaging event: ${JSON.stringify(messagingEvent)}`);
+      }
     }
   }
 
