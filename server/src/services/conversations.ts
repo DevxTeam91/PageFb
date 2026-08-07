@@ -151,7 +151,7 @@ export async function handleIncomingMessage(payload: {
     where: { id: conversation.id },
     data: {
       lastMessageAt: timestamp || new Date(),
-      unread: !isEcho ? true : conversation.unread,
+      unread: !isEcho,
     },
   });
 
