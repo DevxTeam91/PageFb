@@ -47,6 +47,7 @@ export const InboxScreen = () => {
     selectedPageId,
     setSelectedPageId,
     forceSync,
+    handleMarkAllAsRead,
   } = useGlobalState();
   const navigation = useNavigation<any>();
 
@@ -220,12 +221,17 @@ export const InboxScreen = () => {
         </View>
 
         {/* Status Filter Pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterPillsScroll}>
-          {renderFilterPill('all', `All (${conversations.length})`)}
-          {renderFilterPill('unread', `Unread (${conversations.filter((c) => c.unread).length})`)}
-          {renderFilterPill('bot_active', 'Bot Active')}
-          {renderFilterPill('bot_muted', 'Muted')}
-        </ScrollView>
+        <View style={styles.filterPillsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterPillsScroll}>
+            {renderFilterPill('all', `All (${conversations.length})`)}
+            {renderFilterPill('unread', `Unread (${conversations.filter((c) => c.unread).length})`)}
+            {renderFilterPill('bot_active', 'Bot Active')}
+            {renderFilterPill('bot_muted', 'Muted')}
+          </ScrollView>
+          <TouchableOpacity onPress={handleMarkAllAsRead} style={styles.markAllReadBtn}>
+            <Text style={styles.markAllReadText}>Mark all read</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {filteredConversations.length === 0 ? (
@@ -361,9 +367,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#F3F4F6',
   },
-  filterPillsScroll: {
+  filterPillsContainer: {
     flexDirection: 'row',
-    marginTop: 10,
+    alignItems: 'center',
+    gap: 10,
+  },
+  filterPillsScroll: {
+    flex: 1,
+  },
+  markAllReadBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#333333',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  markAllReadText: {
+    color: '#D4AF37',
+    fontSize: 12,
+    fontWeight: '600',
   },
   filterPill: {
     paddingVertical: 6,

@@ -23,6 +23,7 @@ import {
   deletePage,
   forceSync as apiForceSync,
 } from '../services/api';
+import * as api from '../services/api';
 import { getSocket, reconnectSocket, subscribeToRealtimeEvents } from '../services/socket';
 import { database } from '../database';
 import PageModel from '../database/models/Page';
@@ -48,9 +49,10 @@ interface GlobalStateContextType {
   
   // Actions
   handleSendReply: (text?: string, mediaFile?: any) => Promise<void>;
-  handleToggleAutoReply: (enabled?: boolean) => Promise<void>;
-  handleMarkAsRead: () => Promise<void>;
-  handleCreateRule: (rule: any) => Promise<void>;
+  handleToggleAutoReply: (id: string, enabled?: boolean) => Promise<void>;
+  handleMarkAsRead: (id: string) => Promise<void>;
+  handleMarkAllAsRead: () => Promise<void>;
+  handleCreateRule: (pageId: string | null, rule: any) => Promise<void>;
   handleUpdateRule: (id: string, updates: Partial<Rule>) => Promise<void>;
   handleDeleteRule: (id: string) => Promise<void>;
   handleReorderRules: (ruleIds: string[]) => Promise<void>;
@@ -298,10 +300,13 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (nextAppState === 'active') {
-        console.log('[BackgroundSync] App foregrounded. Triggering sync...');
-        // We only reload what's necessary (delta sync will be faster thanks to phase 5)
+        console.log('[BackgroundSync] App foregrounded. Reconnecting socket & syncing...');
+        getSocket().connect();
         loadConversations();
         loadPages();
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        console.log('[BackgroundSync] App backgrounded. Disconnecting socket.');
+        getSocket().disconnect();
       }
     });
 
@@ -596,6 +601,17 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     await loadConversations();
   };
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      setConversations((prev) => prev.map(c => ({ ...c, unread: false })));
+      const pid = selectedPageId !== 'all' ? selectedPageId : undefined;
+      await api.markAllAsRead(pid);
+    } catch (error) {
+      console.error('[GlobalState] markAllAsRead error:', error);
+      // rollback could be implemented here, but ignoring is fine for read status
+    }
+  };
+
   return (
     <GlobalStateContext.Provider
       value={{
@@ -614,6 +630,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         handleSendReply,
         handleToggleAutoReply,
         handleMarkAsRead,
+        handleMarkAllAsRead,
         handleCreateRule,
         handleUpdateRule,
         handleDeleteRule,

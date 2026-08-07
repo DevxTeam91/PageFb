@@ -116,6 +116,15 @@ export async function markConversationAsRead(conversationId: string): Promise<{ 
   return res.json();
 }
 
+export async function markAllAsRead(pageId?: string): Promise<void> {
+  const res = await networkManager.fetchWithRetry(`/conversations/read-all`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pageId }),
+  });
+  if (!res.ok) throw new Error('Failed to mark all as read');
+}
+
 export async function triggerSync(pageId?: string): Promise<{ success: boolean; conversationsSynced: number; messagesSynced: number }> {
   const res = await networkManager.fetchWithRetry(`/conversations/sync`, {
     method: 'POST',
