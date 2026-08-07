@@ -65,11 +65,11 @@ export async function emitNewMessage(payload: { message: any; conversation: any 
 
   if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] Socket Emit ACK resolution - ${traceId}`);
 
-  if (!ackReceived) {
-    console.log('[Socket] No ACK received for new_message. Sending Push Notification...');
+  if (!ackReceived && payload.message.direction === 'inbound') {
+    console.log('[Socket] No ACK received for inbound new_message. Sending Push Notification...');
     await triggerPushForNewMessage(payload);
   } else {
-    console.log('[Socket] new_message ACK received. Push skipped.');
+    console.log('[Socket] new_message ACK received or message is outbound. Push skipped.');
   }
 }
 

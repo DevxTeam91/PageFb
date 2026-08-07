@@ -208,6 +208,30 @@ router.post('/:id/read', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/conversations/read-all
+ * Mark all conversations as read for a given page (or all pages).
+ */
+router.post('/read-all', async (req: Request, res: Response) => {
+  try {
+    const pageId = req.body?.pageId as string | undefined;
+    const where: any = {};
+    if (pageId && pageId !== 'all') {
+      where.pageId = pageId;
+    }
+    await prisma.conversation.updateMany({
+      where,
+      data: { unread: false },
+    });
+    // We do not emit for every single conversation to avoid socket flooding.
+    // The clients can refetch or just optimistically update.
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('[API] Error marking all as read:', err);
+    return res.status(500).json({ error: err.message || 'Failed to mark all as read' });
+  }
+});
+
+/**
  * POST /api/sync
  * Trigger full conversation history backfill from Facebook Graph API.
  */
