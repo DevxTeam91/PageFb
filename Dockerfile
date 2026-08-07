@@ -18,6 +18,8 @@ COPY client ./client
 
 # Generate Prisma Client & Build Server
 WORKDIR /app/server
+RUN sed -i 's/provider      = "prisma-client-js"/provider      = "prisma-client-js"/g' prisma/schema.prisma && \
+    sed -i 's/provider = "sqlite"/provider = "postgresql"/g' prisma/schema.prisma
 RUN npx prisma generate
 RUN npm run build
 
