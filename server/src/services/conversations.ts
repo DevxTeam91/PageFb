@@ -10,7 +10,8 @@ import { downloadAndCacheAttachment } from './mediaCache';
 export async function getOrCreateConversation(
   psid: string,
   userName?: string,
-  targetPageId?: string
+  targetPageId?: string,
+  unreadStatus?: boolean
 ) {
   let dbPageId: string | undefined;
   if (targetPageId) {
@@ -61,15 +62,16 @@ export async function getOrCreateConversation(
         userAvatarUrl,
         pageId: dbPageId,
         autoReplyEnabled: true,
-        unread: true,
+        unread: unreadStatus !== undefined ? unreadStatus : true,
       },
     });
-  } else if ((resolvedName && conversation.userName !== resolvedName) || (userAvatarUrl && !conversation.userAvatarUrl)) {
+  } else if ((resolvedName && conversation.userName !== resolvedName) || (userAvatarUrl && !conversation.userAvatarUrl) || (unreadStatus !== undefined && conversation.unread !== unreadStatus)) {
     conversation = await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         ...(resolvedName && { userName: resolvedName }),
         ...(userAvatarUrl && { userAvatarUrl }),
+        ...(unreadStatus !== undefined && { unread: unreadStatus }),
       },
     });
   }
@@ -95,6 +97,9 @@ export async function handleIncomingMessage(payload: {
     fbMessageId,
     isEcho = false,
   } = payload;
+
+  const traceId = fbMessageId || Date.now().toString();
+  if (process.env.DEBUG === 'true') console.time(`[Trace] handleIncomingMessage DB Ops - ${traceId}`);
 
   const userPsid = senderPsid;
   const conversation = await getOrCreateConversation(userPsid, undefined, recipientPageId);
@@ -150,11 +155,16 @@ export async function handleIncomingMessage(payload: {
     },
   });
 
+  if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] handleIncomingMessage DB Ops - ${traceId}`);
+  if (process.env.DEBUG === 'true') console.time(`[Trace] handleIncomingMessage Socket Emit - ${traceId}`);
+
   emitNewMessage({
     message,
     conversation: updatedConversation,
   });
   emitConversationUpdated(updatedConversation);
+
+  if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] handleIncomingMessage Socket Emit - ${traceId}`);
 
   if (!isEcho && messageText) {
     setImmediate(async () => {
@@ -411,8 +421,9 @@ export async function backfillFromGraphApi(targetPageId?: string): Promise<{
 
           let psid = customer?.id || fbConv.id;
           let userName = customer?.name || `Customer ${psid.slice(-4)}`;
+          let unreadStatus = fbConv.unread_count > 0;
 
-          const conversation = await getOrCreateConversation(psid, userName, page.id);
+          const conversation = await getOrCreateConversation(psid, userName, page.id, unreadStatus);
           conversationsCount++;
 
           const fbMessages = fbConv.messages?.data || [];

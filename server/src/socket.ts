@@ -35,7 +35,10 @@ export function getIO(): Server | null {
 export async function emitNewMessage(payload: { message: any; conversation: any }): Promise<void> {
   if (!io) return;
 
-  const sockets = await io.fetchSockets();
+  const traceId = payload.message.fbMessageId || Date.now().toString();
+  if (process.env.DEBUG === 'true') console.time(`[Trace] Socket Emit ACK resolution - ${traceId}`);
+
+  const sockets = await io.in('inbox').fetchSockets();
   
   if (sockets.length === 0) {
     // No sockets connected, definitely send push
@@ -59,6 +62,8 @@ export async function emitNewMessage(payload: { message: any; conversation: any 
   } catch (error) {
     console.error('[Socket] Error waiting for ACKs:', error);
   }
+
+  if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] Socket Emit ACK resolution - ${traceId}`);
 
   if (!ackReceived) {
     console.log('[Socket] No ACK received for new_message. Sending Push Notification...');

@@ -65,6 +65,7 @@ router.post('/facebook', async (req: RequestWithRawBody, res: Response) => {
 
   // 2. Parse payload
   const events = parseWebhookPayload(req.body);
+  if (process.env.DEBUG === 'true') console.time(`[Trace] Webhook processing ${events.length} events`);
   console.log(`[Webhook] Processing ${events.length} incoming events from Meta...`);
 
   // 3. Process events
@@ -84,6 +85,8 @@ router.post('/facebook', async (req: RequestWithRawBody, res: Response) => {
       console.error('[Webhook] Failed to ingest event:', err);
     }
   }
+  
+  if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] Webhook processing ${events.length} events`);
 
   // Always return 200 OK to Meta quickly to avoid retry storms
   return res.status(200).send('EVENT_RECEIVED');
