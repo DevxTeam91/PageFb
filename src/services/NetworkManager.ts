@@ -135,8 +135,8 @@ class NetworkManager {
       try {
         console.log(`[DEBUG] NetworkManager.fetchWithRetry [Attempt ${attempt + 1}] ${method} ${url}`);
         
-        // Timeout wrapper
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        // Timeout wrapper (60s timeout to allow heavy requests like sync)
+        const timeoutId = setTimeout(() => controller.abort(), 60000); 
         const config = { ...options, signal: controller.signal };
         
         const res = await fetch(url, config);
