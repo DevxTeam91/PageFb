@@ -29,6 +29,7 @@ import ConversationModel from '../database/models/Conversation';
 import MessageModel from '../database/models/Message';
 import { NetworkObserver } from '../services/NetworkObserver';
 import { OfflineQueue } from '../services/OfflineQueue';
+import { NotificationsManager } from '../services/NotificationsManager';
 
 interface GlobalStateContextType {
   conversations: Conversation[];
@@ -55,6 +56,7 @@ interface GlobalStateContextType {
   handleUpdateGlobalAutoReply: (enabled: boolean) => Promise<void>;
   handleVerifyFacebook: () => Promise<void>;
   handleTriggerSync: () => Promise<void>;
+  forceSync: () => Promise<void>;
   handleAddPage: (token: string, name?: string, pageId?: string) => Promise<PageData>;
   handleDeletePage: (id: string) => Promise<void>;
   loadPages: () => Promise<void>;
@@ -373,18 +375,26 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
             ...conversation,
             lastMessage: message,
           };
+          let copy = [...prev];
           if (index >= 0) {
-            const copy = [...prev];
             copy.splice(index, 1);
-            return [updatedConv, ...copy];
+            copy = [updatedConv, ...copy];
           } else {
-            return [updatedConv, ...prev];
+            copy = [updatedConv, ...copy];
           }
+          return copy.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
         });
 
         if (selectedConvIdRef.current === conversation.id) {
           // Add to front since list is inverted
           setMessages((prev) => deduplicateMessages([message, ...prev]));
+        } else {
+          // Trigger local heads-up notification since user is not actively viewing this conversation
+          NotificationsManager.displayLocalNotification(
+            `New message from ${conversation.userName}`,
+            message.text || 'Sent an attachment',
+            conversation.id
+          );
         }
 
         loadPages();
@@ -393,13 +403,13 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
       onNewReply: ({ message, conversationId }) => {
         setConversations((prev) => {
           const index = prev.findIndex((c) => c.id === conversationId);
+          let copy = [...prev];
           if (index >= 0) {
             const target = { ...prev[index], lastMessage: message, lastMessageAt: message.createdAt };
-            const copy = [...prev];
             copy.splice(index, 1);
-            return [target, ...copy];
+            copy = [target, ...copy];
           }
-          return prev;
+          return copy.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
         });
 
         if (selectedConvIdRef.current === conversationId) {
@@ -409,9 +419,10 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
       },
 
       onConversationUpdated: (updated) => {
-        setConversations((prev) =>
-          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
-        );
+        setConversations((prev) => {
+          const mapped = prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c));
+          return mapped.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+        });
       },
 
       onSyncStatus: (status) => {
@@ -493,6 +504,21 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     setConversations((prev) =>
       prev.map((c) => (c.id === result.conversation.id ? { ...c, ...result.conversation } : c))
     );
+    
+    // Persist to WatermelonDB so rebooting offline preserves read state
+    try {
+      await database.write(async () => {
+        const existing = await database.collections.get<ConversationModel>('conversations').find(result.conversation.id).catch(() => null);
+        if (existing) {
+          await existing.update(c => {
+            c.unread = false;
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[WatermelonDB] Failed to update read status locally:', e);
+    }
+    
     loadPages();
   };
 
@@ -539,6 +565,16 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
+  const forceSync = useCallback(async () => {
+    try {
+      await api.forceSync();
+      await loadConversations();
+      await loadPages();
+    } catch (error) {
+      console.error('[GlobalState] forceSync error:', error);
+    }
+  }, [loadConversations, loadPages]);
+
   const handleAddPage = async (token: string, name?: string, pageId?: string) => {
     const res = await addPage(token, name, pageId);
     await loadPages();
@@ -581,6 +617,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         handleUpdateGlobalAutoReply,
         handleVerifyFacebook,
         handleTriggerSync,
+        forceSync,
         handleAddPage,
         handleDeletePage,
         loadPages,

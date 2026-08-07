@@ -50,7 +50,7 @@ class NetworkManager {
   getSocketUrl(): string | null {
     if (SOCKET_URL) return SOCKET_URL;
     if (this.activeBaseUrl) return this.activeBaseUrl.replace(/\/api\/?$/, '');
-    return null;
+    return 'https://chs-business-suit-production-76d3.up.railway.app';
   }
 
   private getCandidates(): string[] {
@@ -74,6 +74,7 @@ class NetworkManager {
     }
 
     const fallbacks = [
+      'https://chs-business-suit-production-76d3.up.railway.app/api', // Production fallback
       'http://10.0.2.2:3000/api', // Emulator
       'http://127.0.0.1:3000/api', // ADB Reverse
       'http://localhost:3000/api'

@@ -22,6 +22,15 @@ export async function fetchConversations(search?: string, pageId?: string, since
   return data.conversations || [];
 }
 
+export async function forceSync(): Promise<void> {
+  const res = await networkManager.fetchWithRetry(`/conversations/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force: true }),
+  });
+  if (!res.ok) throw new Error('Failed to force sync');
+}
+
 export async function fetchConversationMessages(
   conversationId: string
 ): Promise<{ conversation: Conversation; messages: Message[] }> {

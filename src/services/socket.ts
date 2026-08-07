@@ -69,7 +69,12 @@ export function subscribeToRealtimeEvents(handlers: {
   const s = getSocket();
 
   if (handlers.onNewMessage) {
-    s.on('new_message', handlers.onNewMessage);
+    s.on('new_message', (payload, callback) => {
+      handlers.onNewMessage!(payload);
+      if (typeof callback === 'function') {
+        callback({ status: 'ok' });
+      }
+    });
   }
   if (handlers.onNewReply) {
     s.on('new_reply', handlers.onNewReply);

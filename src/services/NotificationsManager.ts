@@ -9,6 +9,7 @@ import {
   AuthorizationStatus
 } from '@react-native-firebase/messaging';
 import { Platform } from 'react-native';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 import * as api from './api'; // Ensure this points to the authenticated API class
 
 export class NotificationsManager {
@@ -58,8 +59,7 @@ export class NotificationsManager {
       // Handle messages while app is in foreground
       onMessage(messagingInstance, async (remoteMessage) => {
         console.log('[Notifications] Foreground Message:', remoteMessage.notification);
-        // We don't necessarily show a local notification here because Socket.IO should handle real-time rendering.
-        // But we can update a badge or show a subtle toast if the user is in another chat.
+        // Socket.IO handles foreground realtime rendering, but if the socket fails or isn't connected, we can show a notification.
       });
 
       // Handle background notification tap
@@ -84,6 +84,34 @@ export class NotificationsManager {
       });
     } catch (e) {
       console.warn('[Notifications] Failed to setup listeners (native module missing)', e);
+    }
+  }
+
+  static async displayLocalNotification(title: string, body: string, conversationId: string) {
+    try {
+      if (Platform.OS === 'android') {
+        await notifee.requestPermission();
+        const channelId = await notifee.createChannel({
+          id: 'messages',
+          name: 'Messages',
+          importance: AndroidImportance.HIGH,
+        });
+
+        await notifee.displayNotification({
+          title,
+          body,
+          data: { conversationId },
+          android: {
+            channelId,
+            importance: AndroidImportance.HIGH,
+            pressAction: {
+              id: 'default',
+            },
+          },
+        });
+      }
+    } catch (e) {
+      console.error('[Notifications] Failed to display local notification:', e);
     }
   }
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import FastImage from 'react-native-fast-image';
@@ -45,12 +46,14 @@ export const InboxScreen = () => {
     pages,
     selectedPageId,
     setSelectedPageId,
+    forceSync,
   } = useGlobalState();
   const navigation = useNavigation<any>();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'bot_active' | 'bot_muted'>('all');
   const [isAddPageModalOpen, setIsAddPageModalOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const filteredConversations = useMemo(() => {
     return conversations.filter((c) => {
@@ -71,6 +74,10 @@ export const InboxScreen = () => {
       if (filter === 'bot_active') return c.autoReplyEnabled;
       if (filter === 'bot_muted') return !c.autoReplyEnabled;
       return true;
+    }).sort((a, b) => {
+      const timeA = new Date(a.lastMessageAt || 0).getTime();
+      const timeB = new Date(b.lastMessageAt || 0).getTime();
+      return timeB - timeA;
     });
   }, [conversations, searchQuery, filter]);
 
@@ -239,6 +246,23 @@ export const InboxScreen = () => {
             renderItem={renderConversation}
             contentContainerStyle={styles.listContent}
             estimatedItemSize={70}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={async () => {
+                  setIsRefreshing(true);
+                  try {
+                    if (forceSync) {
+                      await forceSync();
+                    }
+                  } finally {
+                    setIsRefreshing(false);
+                  }
+                }}
+                tintColor="#D4AF37"
+                colors={['#D4AF37']}
+              />
+            }
           />
         </View>
       )}
