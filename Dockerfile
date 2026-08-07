@@ -45,4 +45,4 @@ COPY --from=builder /app/client/dist ./client/dist
 EXPOSE 3000
 
 WORKDIR /app/server
-CMD ["node", "dist/server.js"]
+CMD ["sh", "-c", "npx prisma db push && node dist/server.js"]
