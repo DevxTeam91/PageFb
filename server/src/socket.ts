@@ -1,5 +1,9 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { sendPushNotification } from './services/firebase';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 let io: Server | null = null;
 
@@ -28,9 +32,62 @@ export function getIO(): Server | null {
   return io;
 }
 
-export function emitNewMessage(payload: { message: any; conversation: any }): void {
-  if (io) {
-    io.emit('new_message', payload);
+export async function emitNewMessage(payload: { message: any; conversation: any }): Promise<void> {
+  if (!io) return;
+
+  const sockets = await io.fetchSockets();
+  
+  if (sockets.length === 0) {
+    // No sockets connected, definitely send push
+    await triggerPushForNewMessage(payload);
+    return;
+  }
+
+  // Sockets connected. Try sending and wait for ACK (3 sec timeout)
+  let ackReceived = false;
+  
+  try {
+    const ackPromises = sockets.map(socket => 
+      socket.timeout(3000).emitWithAck('new_message', payload)
+    );
+    
+    // Wait for all to settle
+    const results = await Promise.allSettled(ackPromises);
+    
+    // If at least one socket successfully acknowledged (Promise fulfilled), we skip push.
+    ackReceived = results.some(result => result.status === 'fulfilled');
+  } catch (error) {
+    console.error('[Socket] Error waiting for ACKs:', error);
+  }
+
+  if (!ackReceived) {
+    console.log('[Socket] No ACK received for new_message. Sending Push Notification...');
+    await triggerPushForNewMessage(payload);
+  } else {
+    console.log('[Socket] new_message ACK received. Push skipped.');
+  }
+}
+
+async function triggerPushForNewMessage(payload: { message: any; conversation: any }) {
+  try {
+    const devices = await prisma.device.findMany();
+    if (devices.length === 0) return;
+
+    const pushPayload = {
+      notification: {
+        title: `New message from ${payload.conversation.userName || 'User'}`,
+        body: payload.message.text || 'Sent an attachment',
+      },
+      data: {
+        conversationId: payload.conversation.id,
+      }
+    };
+
+    for (const device of devices) {
+      await sendPushNotification(device.token, pushPayload);
+    }
+  } catch (err) {
+    console.error('[Socket] Failed to trigger push:', err);
   }
 }
 

@@ -45,8 +45,13 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const search = req.query.search as string | undefined;
     const pageId = req.query.pageId as string | undefined;
+    const since = req.query.since as string | undefined;
 
     const where: any = {};
+
+    if (since) {
+      where.updatedAt = { gte: new Date(parseInt(since, 10)) };
+    }
 
     if (pageId && pageId !== 'all') {
       where.pageId = pageId;

@@ -7,6 +7,7 @@ import conversationsRoutes from './routes/conversations';
 import rulesRoutes from './routes/rules';
 import settingsRoutes from './routes/settings';
 import pagesRoutes from './routes/pages';
+import deviceRoutes from './routes/device';
 
 // Custom request interface with rawBody buffer
 export interface AppRequest extends Request {
@@ -62,6 +63,7 @@ export function createApp(): express.Application {
   app.use('/api/rules', rulesRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/pages', pagesRoutes);
+  app.use('/api/device', deviceRoutes);
 
   // Serve static client assets if built in production
   const clientDistPath = path.resolve(__dirname, '../../client/dist');
