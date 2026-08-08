@@ -41,7 +41,21 @@ export function createApp(): express.Application {
   // Serve media uploads
   app.use('/uploads', express.static(uploadsDir));
 
-  // Capture raw body buffer for webhook signature verification
+  // Mount API & Webhook routers
+  // Use express.raw for webhooks to absolutely guarantee no body mutation by json parser
+  app.use('/webhook', express.raw({ type: 'application/json', limit: '10mb' }), (req, res, next) => {
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body;
+      try {
+        req.body = JSON.parse(req.body.toString('utf8'));
+      } catch (e) {
+        req.body = {};
+      }
+    }
+    next();
+  }, webhookRoutes);
+
+  // Capture raw body buffer for other routes just in case
   app.use(
     express.json({
       verify: (req: AppRequest, _res: any, buf: Buffer) => {
@@ -57,8 +71,6 @@ export function createApp(): express.Application {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Mount API & Webhook routers
-  app.use('/webhook', webhookRoutes);
   app.use('/api/conversations', conversationsRoutes);
   app.use('/api/rules', rulesRoutes);
   app.use('/api/settings', settingsRoutes);
