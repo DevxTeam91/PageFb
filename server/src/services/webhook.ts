@@ -57,6 +57,18 @@ export function verifySignature(
     const expectedBuffer = Buffer.from(expectedHash, 'utf8');
     const signatureBuffer = Buffer.from(signatureHash, 'utf8');
 
+    console.log('[Webhook][SignatureDebug]');
+    console.log(`bodyLength=${bodyBuffer.length}`);
+    console.log(`headerSignaturePresent=${!!signatureHeader}`);
+    console.log(`headerDigestLength=${signatureHash.length}`);
+    console.log(`calculatedDigestLength=${expectedHash.length}`);
+    console.log(`prefixValid=${parts[0] === 'sha256'}`);
+    console.log(`rawBodyAvailable=${!!rawBody}`);
+    
+    // Log the first 4 chars safely for debugging mismatch
+    console.log(`digestPrefixMatch=${expectedHash.substring(0, 4) === signatureHash.substring(0, 4)}`);
+    console.log(`secretLength=${cleanAppSecret.length}`);
+
     if (expectedBuffer.length !== signatureBuffer.length) {
       return false;
     }
