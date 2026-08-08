@@ -65,8 +65,22 @@ router.get('/', async (_req: Request, res: Response) => {
       };
     }
 
+    // Get quick replies
+    const quickRepliesSetting = await prisma.setting.findUnique({
+      where: { key: 'quick_replies' },
+    });
+    let quickReplies: string[] = [];
+    if (quickRepliesSetting) {
+      try {
+        quickReplies = JSON.parse(quickRepliesSetting.value);
+      } catch (e) {
+        quickReplies = [];
+      }
+    }
+
     return res.json({
       globalAutoReply,
+      quickReplies,
       facebookStatus: fbStatus,
       webhookConfig: {
         callbackPath: '/webhook/facebook',
@@ -87,7 +101,7 @@ router.get('/', async (_req: Request, res: Response) => {
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { globalAutoReply } = req.body;
+    const { globalAutoReply, quickReplies } = req.body;
 
     if (globalAutoReply !== undefined) {
       await prisma.setting.upsert({
@@ -97,9 +111,18 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    if (quickReplies !== undefined && Array.isArray(quickReplies)) {
+      await prisma.setting.upsert({
+        where: { key: 'quick_replies' },
+        update: { value: JSON.stringify(quickReplies) },
+        create: { key: 'quick_replies', value: JSON.stringify(quickReplies) },
+      });
+    }
+
     return res.json({
       success: true,
       globalAutoReply: Boolean(globalAutoReply),
+      quickReplies,
     });
   } catch (err: any) {
     console.error('[API] Error updating settings:', err);
