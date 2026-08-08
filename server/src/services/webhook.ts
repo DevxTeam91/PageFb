@@ -46,10 +46,11 @@ export function verifySignature(
 
   const signatureHash = parts[1];
   const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody, 'utf8') : rawBody;
+  const cleanAppSecret = appSecret.trim();
 
   try {
     const expectedHash = crypto
-      .createHmac('sha256', appSecret)
+      .createHmac('sha256', cleanAppSecret)
       .update(bodyBuffer)
       .digest('hex');
 

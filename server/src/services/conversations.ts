@@ -164,9 +164,14 @@ export async function handleIncomingMessage(payload: {
     },
   });
 
+  const currentTraceId = fbMessageId || `trace.${Date.now()}`;
+  console.log(`[Realtime][DB] UPSERT_COMPLETED`);
+  console.log(`[Realtime][Trace] traceId=${currentTraceId} stage=db_upsert_complete`);
+
   if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] handleIncomingMessage DB Ops - ${traceId}`);
   if (process.env.DEBUG === 'true') console.time(`[Trace] handleIncomingMessage Socket Emit - ${traceId}`);
 
+  console.log(`[Realtime][Trace] traceId=${currentTraceId} stage=socket_emitted`);
   emitNewMessage({
     message,
     conversation: updatedConversation,

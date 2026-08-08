@@ -53,7 +53,6 @@ router.post('/facebook', async (req: RequestWithRawBody, res: Response) => {
 
   console.log(`[Realtime][Webhook] RECEIVED`);
 
-  // 1. Verify HMAC-SHA256 signature against raw body
   if (!req.rawBody) {
     console.error('[Webhook] Missing req.rawBody. Ensure express.json() is capturing it.');
     return res.status(400).json({ error: 'Bad Request: Missing raw body' });
@@ -61,28 +60,34 @@ router.post('/facebook', async (req: RequestWithRawBody, res: Response) => {
   const rawBody = req.rawBody;
   const isValid = verifySignature(rawBody, signature, config.APP_SECRET);
 
+  console.log('[Webhook][Signature]');
+  console.log('received=true');
+  console.log(`hasSignature256=${!!signature}`);
+  console.log(`hasAppSecret=${!!config.APP_SECRET}`);
+  console.log(`bodyLength=${rawBody.length}`);
+  console.log(`verificationResult=${isValid ? 'VALID' : 'INVALID'}`);
+
   if (!isValid) {
     if (config.NODE_ENV === 'development') {
       console.warn('[Webhook] Warning: X-Hub-Signature-256 signature verification did not match or APP_SECRET is missing. Ingesting event in dev mode...');
     } else {
-      console.error(`[Webhook][403] reason=InvalidSignature`);
-      console.error(`[Webhook][403] path=/webhook/facebook`);
-      console.error(`[Webhook][403] hasSignature=${!!signature}`);
-      console.error(`[Webhook][403] hasAppSecret=${!!config.APP_SECRET}`);
-      console.error(`[Webhook][403] environment=${config.NODE_ENV}`);
-      console.error(`[Webhook][403] timestamp=${new Date().toISOString()}`);
+      console.log('[Webhook][Signature] result=INVALID');
+      console.log(`[Webhook][Signature] bodyLength=${rawBody.length}`);
+      console.log(`[Webhook][Signature] hasSignature256=${!!signature}`);
+      console.log(`[Webhook][Signature] hasAppSecret=${!!config.APP_SECRET}`);
       
       console.warn('[Webhook] Unauthorized: Invalid X-Hub-Signature-256 signature.');
       return res.status(403).json({ error: 'Forbidden: Invalid signature' });
     }
   } else {
-    console.log('[Realtime][Webhook] VALIDATED');
+    console.log('[Webhook][Signature] result=VALID');
+    console.log('[Realtime][Webhook] VERIFIED');
     console.log('[Webhook] X-Hub-Signature-256 verified successfully.');
   }
 
   // 2. Parse payload
   const events = parseWebhookPayload(req.body);
-  console.log(`[Realtime][Webhook] EVENT_PARSED count=${events.length}`);
+  console.log(`[Realtime][Webhook] EVENT_RECEIVED count=${events.length}`);
   if (process.env.DEBUG === 'true') console.time(`[Trace] Webhook processing ${events.length} events`);
   console.log(`[Webhook] Processing ${events.length} incoming events from Meta...`);
 
@@ -92,9 +97,12 @@ router.post('/facebook', async (req: RequestWithRawBody, res: Response) => {
   // 3. Process events asynchronously
   setImmediate(async () => {
     for (const event of events) {
+      const traceId = event.fbMessageId || `trace.${Date.now()}`;
       try {
-        console.log(`\n[Realtime][Webhook] messageId=${event.fbMessageId} conversationId=(Pending) timestamp=${event.timestamp}`);
+        console.log(`\n[Realtime][Trace] traceId=${traceId} stage=webhook_received`);
+        console.log(`[Realtime][Trace] traceId=${traceId} stage=signature_verified`);
         console.log(`[Webhook] Ingesting message from user ${event.userPsid}: "${event.text}"`);
+        
         await handleIncomingMessage({
           senderPsid: event.userPsid,
           recipientPageId: event.pageId,
