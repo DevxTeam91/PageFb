@@ -21,6 +21,7 @@ interface SettingsPanelProps {
   syncStatus?: SyncStatus;
   pages: PageData[];
   onUpdateGlobalAutoReply: (enabled: boolean) => Promise<void>;
+  onUpdateQuickReplies?: (replies: string[]) => Promise<void>;
   onVerifyConnection: () => Promise<void>;
   onTriggerSync: () => Promise<void>;
   onOpenAddModal: () => void;
@@ -33,6 +34,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   syncStatus,
   pages,
   onUpdateGlobalAutoReply,
+  onUpdateQuickReplies,
   onVerifyConnection,
   onTriggerSync,
   onOpenAddModal,
@@ -44,6 +46,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [notificationStatus, setNotificationStatus] = useState<string>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
   );
+  
+  const [newQuickReply, setNewQuickReply] = useState('');
 
   const copyToClipboard = (text: string, fieldId: string) => {
     navigator.clipboard.writeText(text);
@@ -235,6 +239,89 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               />
               <span className="slider" />
             </label>
+          </div>
+        </section>
+
+        {/* 3.5. Quick Replies Manager */}
+        <section className="setting-card">
+          <div className="card-header-row">
+            <div className="card-title-group">
+              <h3>
+                <Bot size={18} color="var(--accent-primary)" />
+                Quick Replies Manager
+              </h3>
+              <p>Manage standard responses available for one-click sending in the chat.</p>
+            </div>
+          </div>
+          
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Add a new quick reply..."
+                value={newQuickReply}
+                onChange={(e) => setNewQuickReply(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && newQuickReply.trim() && onUpdateQuickReplies) {
+                    e.preventDefault();
+                    const currentReplies = settings?.quickReplies || [];
+                    if (!currentReplies.includes(newQuickReply.trim())) {
+                      await onUpdateQuickReplies([...currentReplies, newQuickReply.trim()]);
+                      setNewQuickReply('');
+                    }
+                  }
+                }}
+                style={{ flex: 1 }}
+              />
+              <button 
+                className="primary-btn"
+                onClick={async () => {
+                  if (newQuickReply.trim() && onUpdateQuickReplies) {
+                    const currentReplies = settings?.quickReplies || [];
+                    if (!currentReplies.includes(newQuickReply.trim())) {
+                      await onUpdateQuickReplies([...currentReplies, newQuickReply.trim()]);
+                      setNewQuickReply('');
+                    }
+                  }
+                }}
+              >
+                Add
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {settings?.quickReplies && settings.quickReplies.length > 0 ? (
+                settings.quickReplies.map((reply, idx) => (
+                  <div key={idx} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    background: 'var(--surface-sunken)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)'
+                  }}>
+                    <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{reply}</span>
+                    <button 
+                      className="icon-btn delete-btn"
+                      onClick={async () => {
+                        if (onUpdateQuickReplies) {
+                          const newReplies = settings.quickReplies!.filter((_, i) => i !== idx);
+                          await onUpdateQuickReplies(newReplies);
+                        }
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                  No quick replies configured.
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

@@ -21,6 +21,7 @@ interface ChatWindowProps {
   onSendReply: (text?: string, mediaFile?: File) => Promise<void>;
   onToggleAutoReply: (enabled?: boolean) => Promise<void>;
   onMarkAsRead: () => Promise<void>;
+  quickReplies?: string[];
 }
 
 function formatMessageTime(dateString: string): string {
@@ -36,12 +37,7 @@ function getInitials(name?: string | null): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-const QUICK_REPLIES = [
-  'Hi there! How can we help you today?',
-  'Thanks for reaching out! Let me check that for you.',
-  'Our support team is looking into this.',
-  'Have a wonderful day!',
-];
+// Removed static QUICK_REPLIES constant
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
   conversation,
@@ -50,6 +46,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   onSendReply,
   onToggleAutoReply,
   onMarkAsRead,
+  quickReplies = [],
 }) => {
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
@@ -167,8 +164,46 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const parseAttachments = (attachmentsStr?: string | null): AttachmentItem[] => {
     if (!attachmentsStr) return [];
     try {
-      const parsed = JSON.parse(attachmentsStr);
-      return Array.isArray(parsed) ? parsed : [];
+      let parsed = JSON.parse(attachmentsStr);
+      if (parsed?.data && Array.isArray(parsed.data)) {
+        parsed = parsed.data;
+      }
+      if (!Array.isArray(parsed)) {
+        if (typeof parsed === 'object' && parsed !== null) parsed = [parsed];
+        else return [];
+      }
+      return parsed.map((item: any) => {
+        let type = item.type;
+        const url = item.url || item.payload?.url || item.image_data?.url || item.preview_url || item.src || '';
+        
+        if (!type || type !== 'image') {
+          const lowerUrl = url.toLowerCase();
+          const mime = item.mimeType?.toLowerCase() || '';
+          const name = (item.name || item.title || '').toLowerCase();
+          
+          if (
+            mime.startsWith('image/') || 
+            name.includes('image-') ||
+            lowerUrl.includes('.jpg') || 
+            lowerUrl.includes('.jpeg') || 
+            lowerUrl.includes('.png') || 
+            lowerUrl.includes('.gif') || 
+            lowerUrl.includes('.webp') ||
+            lowerUrl.includes('.heic')
+          ) {
+            type = 'image';
+          } else if (mime.startsWith('video/') || lowerUrl.includes('.mp4') || lowerUrl.includes('.mov')) {
+            type = 'video';
+          } else if (mime.startsWith('audio/') || lowerUrl.includes('.mp3') || lowerUrl.includes('.wav') || lowerUrl.includes('.ogg')) {
+            type = 'audio';
+          } else if (!type) {
+            type = 'file';
+          }
+        }
+
+        const name = item.name || item.title || (type === 'image' ? 'Image Attachment' : 'Attachment');
+        return { type, url, name };
+      }).filter((att: any) => !!att.url);
     } catch {
       return [];
     }
@@ -333,18 +368,28 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       </div>
 
       {/* Quick Replies Bar */}
-      <div style={{ padding: '0 24px 8px', display: 'flex', gap: '8px', overflowX: 'auto' }}>
-        {QUICK_REPLIES.map((quickText, idx) => (
-          <button
-            key={idx}
-            className="filter-pill"
-            style={{ whiteSpace: 'nowrap', fontSize: '11px' }}
-            onClick={() => setInputText(quickText)}
-          >
-            {quickText}
-          </button>
-        ))}
-      </div>
+      {quickReplies.length > 0 && (
+        <div style={{ padding: '0 24px 8px', display: 'flex', gap: '8px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+          {quickReplies.map((quickText, idx) => (
+            <button
+              key={idx}
+              className="filter-pill"
+              style={{ 
+                fontSize: '12px', 
+                maxWidth: '250px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'inline-block'
+              }}
+              onClick={() => setInputText(quickText)}
+              title={quickText}
+            >
+              {quickText}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Staged File Preview */}
       {selectedFile && filePreviewUrl && (

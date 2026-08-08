@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { ConversationList } from './components/Inbox/ConversationList';
 import { ChatWindow } from './components/Inbox/ChatWindow';
@@ -18,6 +18,7 @@ import {
   reorderRules,
   fetchSettings,
   updateGlobalAutoReply,
+  updateQuickReplies,
   verifyFacebookConnection,
   triggerSync,
   fetchPages,
@@ -118,6 +119,12 @@ export const App: React.FC = () => {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const selectedConvIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -185,6 +192,16 @@ export const App: React.FC = () => {
       console.error('Failed to load settings:', err);
     }
   }, []);
+
+  const handleUpdateQuickReplies = async (replies: string[]) => {
+    try {
+      const newVal = await updateQuickReplies(replies);
+      setSettings((prev) => (prev ? { ...prev, quickReplies: newVal } : null));
+    } catch (err) {
+      console.error('Failed to update quick replies:', err);
+      alert('Failed to update quick replies');
+    }
+  };
 
   useEffect(() => {
     loadPages();
@@ -259,8 +276,10 @@ export const App: React.FC = () => {
 
     const unsubscribe = subscribeToRealtimeEvents({
       onNewMessage: ({ message, conversation }) => {
+        const isCurrentlyViewed = selectedConvIdRef.current === conversation.id;
+
         // Sound & Browser Notification for inbound messages
-        if (message.direction === 'inbound') {
+        if (message.direction === 'inbound' && !isCurrentlyViewed) {
           playLoudNotificationChime();
           showBrowserNotification(
             conversation.userName || 'Customer',
@@ -275,14 +294,18 @@ export const App: React.FC = () => {
           const updatedConv = {
             ...conversation,
             lastMessage: message,
+            lastMessageAt: message.createdAt || new Date().toISOString(),
+            unread: !isCurrentlyViewed,
           };
+          let copy = [...prev];
           if (index >= 0) {
-            const copy = [...prev];
             copy.splice(index, 1);
-            return [updatedConv, ...copy];
+            copy = [updatedConv, ...copy];
           } else {
-            return [updatedConv, ...prev];
+            copy = [updatedConv, ...copy];
           }
+          // Sort exactly like mobile
+          return copy.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
         });
 
         // If message belongs to active thread, append it
@@ -300,10 +323,10 @@ export const App: React.FC = () => {
         setConversations((prev) => {
           const index = prev.findIndex((c) => c.id === conversationId);
           if (index >= 0) {
-            const target = { ...prev[index], lastMessage: message, lastMessageAt: message.createdAt };
+            const target = { ...prev[index], lastMessage: message, lastMessageAt: message.createdAt || new Date().toISOString() };
             const copy = [...prev];
             copy.splice(index, 1);
-            return [target, ...copy];
+            return [target, ...copy].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
           }
           return prev;
         });
@@ -453,6 +476,7 @@ export const App: React.FC = () => {
               onSendReply={handleSendReply}
               onToggleAutoReply={handleToggleAutoReply}
               onMarkAsRead={handleMarkAsRead}
+              quickReplies={settings?.quickReplies}
             />
           </div>
         )}
@@ -468,12 +492,13 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'settings' && (
-          <SettingsPanel
-            settings={settings}
-            syncStatus={syncStatus}
-            pages={pages}
-            onUpdateGlobalAutoReply={handleUpdateGlobalAutoReply}
-            onVerifyConnection={handleVerifyFacebook}
+            <SettingsPanel
+              settings={settings}
+              syncStatus={syncStatus}
+              pages={pages}
+              onUpdateGlobalAutoReply={handleUpdateGlobalAutoReply}
+              onUpdateQuickReplies={handleUpdateQuickReplies}
+              onVerifyConnection={handleVerifyFacebook}
             onTriggerSync={handleTriggerSync}
             onOpenAddModal={() => setIsAddPageModalOpen(true)}
             onDeletePage={handleDeletePage}

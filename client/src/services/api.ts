@@ -211,6 +211,17 @@ export async function updateGlobalAutoReply(enabled: boolean): Promise<boolean> 
   return data.globalAutoReply;
 }
 
+export async function updateQuickReplies(replies: string[]): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quickReplies: replies }),
+  });
+  if (!res.ok) throw new Error('Failed to update quick replies');
+  const data = await res.json();
+  return data.quickReplies;
+}
+
 export async function verifyFacebookConnection(): Promise<{ connected: boolean; pageName?: string; error?: string; webhookSubscribed?: boolean; webhookMessage?: string }> {
   const res = await fetch(`${API_BASE}/settings/verify-connection`);
   const data = await res.json();
