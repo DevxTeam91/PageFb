@@ -36,9 +36,11 @@ export async function emitNewMessage(payload: { message: any; conversation: any 
   if (!io) return;
 
   const traceId = payload.message.fbMessageId || Date.now().toString();
+  console.log(`\n[Realtime][Socket] Emitting new_message: messageId=${traceId} conversationId=${payload.conversation.id}`);
+  
   if (process.env.DEBUG === 'true') console.time(`[Trace] Socket Emit ACK resolution - ${traceId}`);
 
-  const sockets = await io.in('inbox').fetchSockets();
+  const sockets = await io.fetchSockets();
   
   if (sockets.length === 0) {
     // No sockets connected, definitely send push
@@ -59,6 +61,9 @@ export async function emitNewMessage(payload: { message: any; conversation: any 
     
     // If at least one socket successfully acknowledged (Promise fulfilled), we skip push.
     ackReceived = results.some(result => result.status === 'fulfilled');
+    if (ackReceived) {
+      console.log(`[Realtime][Socket] ACK_RECEIVED messageId=${traceId}`);
+    }
   } catch (error) {
     console.error('[Socket] Error waiting for ACKs:', error);
   }
@@ -66,10 +71,10 @@ export async function emitNewMessage(payload: { message: any; conversation: any 
   if (process.env.DEBUG === 'true') console.timeEnd(`[Trace] Socket Emit ACK resolution - ${traceId}`);
 
   if (!ackReceived && payload.message.direction === 'inbound') {
-    console.log('[Socket] No ACK received for inbound new_message. Sending Push Notification...');
+    console.log(`[Realtime][Notification] messageId=${traceId} type=background (No ACK received)`);
     await triggerPushForNewMessage(payload);
   } else {
-    console.log('[Socket] new_message ACK received or message is outbound. Push skipped.');
+    console.log(`[Realtime][Notification] messageId=${traceId} type=suppressed (ACK received or outbound)`);
   }
 }
 
@@ -98,6 +103,7 @@ async function triggerPushForNewMessage(payload: { message: any; conversation: a
 
 export function emitNewReply(payload: { message: any; conversationId: string }): void {
   if (io) {
+    console.log(`[Realtime][Socket] Emitting new_reply: messageId=${payload.message.id || payload.message.fbMessageId} conversationId=${payload.conversationId}`);
     io.emit('new_reply', payload);
   }
 }

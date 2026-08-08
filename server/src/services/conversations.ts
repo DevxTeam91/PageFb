@@ -14,6 +14,8 @@ export async function getOrCreateConversation(
   unreadStatus?: boolean
 ) {
   let dbPageId: string | undefined;
+  let pageToken: string | undefined;
+
   if (targetPageId) {
     const page = await prisma.page.findFirst({
       where: {
@@ -21,11 +23,17 @@ export async function getOrCreateConversation(
       },
     });
     dbPageId = page?.id;
+    if (page?.accessToken) {
+      pageToken = decryptToken(page.accessToken);
+    }
   }
 
   if (!dbPageId) {
     const defaultPage = await prisma.page.findFirst({ where: { isActive: true } });
     dbPageId = defaultPage?.id;
+    if (defaultPage?.accessToken) {
+      pageToken = decryptToken(defaultPage.accessToken);
+    }
   }
 
   if (!dbPageId) {
@@ -44,7 +52,7 @@ export async function getOrCreateConversation(
 
   if (!resolvedName || !userAvatarUrl) {
     try {
-      const profile = await graphApiClient.getUserProfile(psid);
+      const profile = await graphApiClient.getUserProfile(psid, pageToken);
       if (profile) {
         resolvedName = resolvedName || profile.name || profile.first_name || `User ${psid.slice(-4)}`;
         userAvatarUrl = profile.profile_pic;
@@ -138,6 +146,7 @@ export async function handleIncomingMessage(payload: {
         fbMessageId: fbMessageId || undefined,
       },
     });
+    console.log(`[Realtime][DB] messageId=${fbMessageId} conversationId=${conversation.id} created=true`);
   } catch (err: any) {
     if (err.code === 'P2002') {
       console.warn('[Webhook] Duplicate event race condition caught for fbMessageId:', fbMessageId);
