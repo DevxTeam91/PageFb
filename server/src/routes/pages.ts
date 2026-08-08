@@ -149,8 +149,16 @@ router.post('/', async (req: Request, res: Response) => {
       // Auto-subscribe page to webhooks
       try {
         const subUrl = `https://graph.facebook.com/v19.0/me/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_echoes&access_token=${encodeURIComponent(p.accessToken)}`;
-        await fetch(subUrl, { method: 'POST' });
-      } catch {}
+        const subRes = await fetch(subUrl, { method: 'POST' });
+        const subJson = await subRes.json();
+        if (!subRes.ok || !subJson.success) {
+          console.error(`[API] Failed to subscribe page ${p.name} to webhook:`, subJson);
+        } else {
+          console.log(`[API] Successfully subscribed page ${p.name} to webhook.`);
+        }
+      } catch (err: any) {
+        console.error(`[API] Network error subscribing page ${p.name} to webhook:`, err);
+      }
 
       savedPages.push({
         id: page.id,
