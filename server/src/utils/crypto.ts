@@ -13,7 +13,7 @@ function getEncryptionKey(): Buffer {
   if (!secret) {
     console.warn('[Security] APP_SECRET is missing. Using fallback dev key. DO NOT USE IN PRODUCTION.');
   }
-  const baseKey = secret || 'dev_insecure_fallback_encryption_key_v1';
+  const baseKey = (secret || 'dev_insecure_fallback_encryption_key_v1').trim();
   return crypto.scryptSync(baseKey, 'static-salt-for-messenger-inbox', 32);
 }
 

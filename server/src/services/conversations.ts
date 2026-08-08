@@ -422,7 +422,14 @@ export async function backfillFromGraphApi(targetPageId?: string): Promise<{
         message: `Syncing ${page.name}...`,
       });
 
-      const decryptedToken = decryptToken(page.accessToken);
+      let decryptedToken: string;
+      try {
+        decryptedToken = decryptToken(page.accessToken);
+      } catch (err: any) {
+        console.error(`[Sync] Skipping page ${page.name} (${page.pageId}) due to decryption failure. The App Secret may have changed.`);
+        continue;
+      }
+      
       const sinceDate = page.lastSyncedAt ? new Date(page.lastSyncedAt) : undefined;
       const fbConversations = await graphApiClient.fetchFullConversationsWithMessages(decryptedToken, page.pageId, 1000, sinceDate);
 
