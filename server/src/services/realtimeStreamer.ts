@@ -109,7 +109,10 @@ async function pollMetaUpdates() {
             processedMessageIds.add(msg.id);
             if (processedMessageIds.size > 5000) {
               const iterator = processedMessageIds.values();
-              processedMessageIds.delete(iterator.next().value);
+              const first = iterator.next().value;
+              if (first !== undefined) {
+                processedMessageIds.delete(first);
+              }
             }
           }
         }
