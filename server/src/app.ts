@@ -43,7 +43,7 @@ export function createApp(): express.Application {
 
   // Mount API & Webhook routers
   // Use express.raw for webhooks to absolutely guarantee no body mutation by json parser
-  app.use('/webhook', express.raw({ type: 'application/json', limit: '10mb' }), (req, res, next) => {
+  app.use('/webhook', express.raw({ type: 'application/json', limit: '10mb' }), (req: AppRequest, res: Response, next: NextFunction) => {
     if (Buffer.isBuffer(req.body)) {
       req.rawBody = req.body;
       try {
