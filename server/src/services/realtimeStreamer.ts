@@ -97,6 +97,7 @@ async function pollMetaUpdates() {
               timestamp: new Date(msg.created_time),
               fbMessageId: msg.id,
               isEcho: !isFromCustomer,
+              source: 'streamer',
             });
 
             if (result.duplicate) {

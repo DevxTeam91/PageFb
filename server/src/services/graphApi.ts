@@ -217,10 +217,34 @@ export class GraphApiClient {
       const data = (await response.json()) as any;
 
       if (!response.ok || data?.error) {
+        console.log(`[Identity][ProfileRequest]\npsid=${psid}\nmethod=GET\nendpointType=/{psid}\nstatus=failed`);
+        console.log(`[Identity][Fallback]\npsid=${psid}\nreason=Standard profile API failed/denied, trying /me/conversations`);
+        
+        const fallbackUrl = `${this.baseUrl}/me/conversations?user_id=${encodeURIComponent(psid)}&fields=participants&access_token=${encodeURIComponent(token)}`;
+        const fbRes = await this.fetchFn(fallbackUrl, { method: 'GET' });
+        const fbData = (await fbRes.json()) as any;
+        
+        if (fbRes.ok && fbData.data && fbData.data.length > 0) {
+           console.log(`[Identity][ProfileRequest]\npsid=${psid}\nmethod=GET\nendpointType=/me/conversations\nstatus=success`);
+           const participants = fbData.data[0].participants?.data || [];
+           const customer = participants.find((p: any) => p.id === psid);
+           if (customer && customer.name) {
+              console.log(`[Identity][Resolved]\npsid=${psid}\nnameAvailable=true\nprofilePictureAvailable=false`);
+              return {
+                 id: psid,
+                 name: customer.name,
+              };
+           }
+        } else {
+           console.log(`[Identity][ProfileRequest]\npsid=${psid}\nmethod=GET\nendpointType=/me/conversations\nstatus=failed`);
+        }
+        console.log(`[Identity][Resolved]\npsid=${psid}\nnameAvailable=false\nprofilePictureAvailable=false`);
         return null;
       }
 
+      console.log(`[Identity][ProfileRequest]\npsid=${psid}\nmethod=GET\nendpointType=/{psid}\nstatus=success`);
       const name = data.name || (data.first_name ? `${data.first_name} ${data.last_name || ''}`.trim() : undefined);
+      console.log(`[Identity][Resolved]\npsid=${psid}\nnameAvailable=${!!name}\nprofilePictureAvailable=${!!data.profile_pic}`);
 
       return {
         id: data.id || psid,
@@ -229,7 +253,8 @@ export class GraphApiClient {
         name,
         profile_pic: data.profile_pic,
       };
-    } catch {
+    } catch (e: any) {
+      console.log(`[Identity][ProfileRequest]\npsid=${psid}\nmethod=GET\nendpointType=Unknown\nstatus=failed`);
       return null;
     }
   }

@@ -4,6 +4,9 @@ import { emitNewMessage, emitNewReply, emitConversationUpdated, emitSyncStatus }
 import { decryptToken } from '../utils/crypto';
 import { downloadAndCacheAttachment } from './mediaCache';
 
+const profileAttemptCache = new Map<string, number>();
+const PROFILE_RETRY_BACKOFF_MS = 1000 * 60 * 60; // 1 hour
+
 /**
  * Helper to get or create a conversation record by PSID & pageId
  */
@@ -47,41 +50,80 @@ export async function getOrCreateConversation(
     },
   });
 
+  let identityState = 'UNKNOWN';
+  if (conversation) {
+    if (conversation.userName && !conversation.userName.startsWith('Customer ') && !conversation.userName.startsWith('User ')) {
+      identityState = 'REAL_NAME';
+    } else {
+      identityState = 'FALLBACK_NAME';
+    }
+  }
+
+  console.log(`[Identity][Existing]\npsid=${psid}\nidentityState=${identityState}`);
+
   let resolvedName = userName;
   let userAvatarUrl: string | undefined;
 
-  if (!resolvedName || !userAvatarUrl) {
-    try {
-      const profile = await graphApiClient.getUserProfile(psid, pageToken);
-      if (profile) {
-        resolvedName = resolvedName || profile.name || profile.first_name || `User ${psid.slice(-4)}`;
-        userAvatarUrl = profile.profile_pic;
+  if (identityState !== 'REAL_NAME') {
+    const lastAttempt = profileAttemptCache.get(psid) || 0;
+    const now = Date.now();
+    if (now - lastAttempt > PROFILE_RETRY_BACKOFF_MS) {
+      profileAttemptCache.set(psid, now);
+      try {
+        const profile = await graphApiClient.getUserProfile(psid, pageToken);
+        if (profile && profile.name) {
+          resolvedName = profile.name;
+          userAvatarUrl = profile.profile_pic;
+        }
+      } catch (e: any) {
+        console.warn(`[Conversations] Profile lookup error for PSID ${psid}:`, e.message);
       }
-    } catch (e: any) {
-      console.warn(`[Conversations] Profile lookup skipped for PSID ${psid}:`, e.message);
+    } else {
+      console.log(`[Identity][Fallback]\npsid=${psid}\nreason=Backoff active, skipping profile resolution`);
     }
+  } else {
+    // Preserve existing real name
+    resolvedName = conversation?.userName || userName;
+    userAvatarUrl = conversation?.userAvatarUrl || undefined;
   }
+
+  const fallbackName = `Customer ${psid.slice(-4)}`;
+  const finalName = resolvedName || fallbackName;
 
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
         psid,
-        userName: resolvedName || `Customer ${psid.slice(-4)}`,
+        userName: finalName,
         userAvatarUrl,
         pageId: dbPageId,
         autoReplyEnabled: true,
         unread: unreadStatus !== undefined ? unreadStatus : true,
       },
     });
-  } else if ((resolvedName && conversation.userName !== resolvedName) || (userAvatarUrl && !conversation.userAvatarUrl) || (unreadStatus !== undefined && conversation.unread !== unreadStatus)) {
-    conversation = await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        ...(resolvedName && { userName: resolvedName }),
-        ...(userAvatarUrl && { userAvatarUrl }),
-        ...(unreadStatus !== undefined && { unread: unreadStatus }),
-      },
-    });
+    console.log(`[Identity][Updated]\nconversationId=${conversation.id}\nidentityState=${resolvedName ? 'REAL_NAME' : 'FALLBACK_NAME'}`);
+  } else {
+    const nameUpgraded = (identityState === 'FALLBACK_NAME' || identityState === 'UNKNOWN') && resolvedName;
+    const nameChanged = resolvedName && conversation.userName !== resolvedName;
+    const avatarChanged = userAvatarUrl && !conversation.userAvatarUrl;
+    const unreadChanged = unreadStatus !== undefined && conversation.unread !== unreadStatus;
+
+    if (nameChanged || avatarChanged || unreadChanged) {
+      conversation = await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          ...(nameChanged && { userName: resolvedName }),
+          ...(avatarChanged && { userAvatarUrl }),
+          ...(unreadChanged && { unread: unreadStatus }),
+        },
+      });
+
+      if (nameUpgraded || nameChanged) {
+        console.log(`[Identity][Updated]\nconversationId=${conversation.id}\nidentityState=REAL_NAME`);
+        // Immediately emit socket update when identity is upgraded so Mobile UI updates in real-time
+        emitConversationUpdated(conversation);
+      }
+    }
   }
 
   return conversation;
@@ -95,6 +137,7 @@ export async function handleIncomingMessage(payload: {
   timestamp?: Date;
   fbMessageId?: string;
   isEcho?: boolean;
+  source?: 'streamer' | 'webhook';
 }) {
   const {
     senderPsid,
@@ -104,10 +147,13 @@ export async function handleIncomingMessage(payload: {
     timestamp,
     fbMessageId,
     isEcho = false,
+    source = 'webhook',
   } = payload;
 
   const traceId = fbMessageId || Date.now().toString();
   if (process.env.DEBUG === 'true') console.time(`[Trace] handleIncomingMessage DB Ops - ${traceId}`);
+
+  console.log(`[Identity][Incoming]\nsource=${source}\npageId=${recipientPageId}\npsid=${senderPsid}\nconversationId=Pending`);
 
   const userPsid = senderPsid;
   const conversation = await getOrCreateConversation(userPsid, undefined, recipientPageId);
