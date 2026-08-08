@@ -89,8 +89,16 @@ async function pollMetaUpdates() {
 
             console.log(`[Realtime][Poller][DISCOVERED] conversationId=${fbConv.id} messageId=${msg.id}`);
 
+            let actualCustomerPsid = 'unknown';
+            if (isFromCustomer) {
+              actualCustomerPsid = msg.from?.id || 'unknown';
+            } else {
+              const customerParticipant = fbConv.participants?.data?.find(p => p.id !== page.pageId);
+              actualCustomerPsid = customerParticipant?.id || 'unknown';
+            }
+
             const result = await handleIncomingMessage({
-              senderPsid: msg.from?.id || 'unknown',
+              senderPsid: actualCustomerPsid,
               recipientPageId: page.pageId,
               messageText: msg.message,
               attachments: normalizedAttachments,
