@@ -42,6 +42,17 @@ async function startServer() {
         console.warn('[Startup] Failed to initialize BullMQ sync cron:', err.message);
       }
       */
+
+      // Initialize Auto-Cleanup Job (Runs every 24 hours)
+      try {
+        const { cleanOldData } = await import('./services/cleanup');
+        // Run immediately on startup
+        cleanOldData();
+        // Then run every 24 hours
+        setInterval(cleanOldData, 24 * 60 * 60 * 1000);
+      } catch (err: any) {
+        console.warn('[Startup] Failed to initialize auto-cleanup job:', err.message);
+      }
     });
   } catch (err: any) {
     console.error('Fatal error during startup:', err.message || err);
