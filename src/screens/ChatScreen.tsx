@@ -12,6 +12,7 @@ import {
   Keyboard,
   PermissionsAndroid,
   Image,
+  Modal,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import FastImage from 'react-native-fast-image';
@@ -25,12 +26,7 @@ try {
   launchImageLibrary = require('react-native-image-picker').launchImageLibrary;
 } catch {}
 
-const QUICK_REPLIES = [
-  'Hi there! How can we help you today?',
-  'Thanks for reaching out! Let me check that for you.',
-  'Our support team is looking into this.',
-  'Have a wonderful day!',
-];
+
 
 const GALLERY_IMAGES = [
   'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600',
@@ -67,8 +63,35 @@ function parseAttachments(attachmentsStr?: any): AttachmentItem[] {
       else return [];
     }
     return parsed.map((item: any) => {
-      const type = item.type || (item.mimeType?.startsWith('video/') ? 'video' : 'image');
+      let type = item.type;
       const url = item.url || item.payload?.url || item.image_data?.url || item.preview_url || item.src || '';
+      
+      // Facebook sometimes sends images with type "file" or "fallback"
+      if (!type || type !== 'image') {
+        const lowerUrl = url.toLowerCase();
+        const mime = item.mimeType?.toLowerCase() || '';
+        const name = (item.name || item.title || '').toLowerCase();
+        
+        if (
+          mime.startsWith('image/') || 
+          name.includes('image-') ||
+          lowerUrl.includes('.jpg') || 
+          lowerUrl.includes('.jpeg') || 
+          lowerUrl.includes('.png') || 
+          lowerUrl.includes('.gif') || 
+          lowerUrl.includes('.webp') ||
+          lowerUrl.includes('.heic')
+        ) {
+          type = 'image';
+        } else if (mime.startsWith('video/') || lowerUrl.includes('.mp4') || lowerUrl.includes('.mov')) {
+          type = 'video';
+        } else if (mime.startsWith('audio/') || lowerUrl.includes('.mp3') || lowerUrl.includes('.wav') || lowerUrl.includes('.ogg')) {
+          type = 'audio';
+        } else if (!type) {
+          type = 'file';
+        }
+      }
+
       const name = item.name || item.title || (type === 'image' ? 'Image Attachment' : 'Attachment');
       return { type, url, name };
     }).filter((att: any) => !!att.url);
@@ -86,12 +109,14 @@ export const ChatScreen = () => {
     handleSendReply,
     handleToggleAutoReply,
     handleMarkAsRead,
+    settings,
   } = useGlobalState();
 
   const conversation = conversations.find((c) => c.id === selectedConversationId);
   const [inputText, setInputText] = useState('');
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const flashListRef = useRef<any>(null);
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -218,7 +243,7 @@ export const ChatScreen = () => {
             return (
               <TouchableOpacity
                 key={idx}
-                onPress={() => handleOpenUrl(resolveMediaUrl(att.url))}
+                onPress={() => setFullscreenImage(resolveMediaUrl(att.url))}
                 activeOpacity={0.9}
               >
                 <FastImage 
@@ -379,19 +404,21 @@ export const ChatScreen = () => {
         )}
       </View>
 
-      <View style={styles.quickRepliesContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {QUICK_REPLIES.map((quickText, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.quickReplyBtn}
-              onPress={() => setInputText(quickText)}
-            >
-              <Text style={styles.quickReplyText}>{quickText}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+      {settings?.quickReplies && settings.quickReplies.length > 0 && (
+        <View style={styles.quickRepliesContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {settings.quickReplies.map((quickText, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={styles.quickReplyBtn}
+                onPress={() => setInputText(quickText)}
+              >
+                <Text style={styles.quickReplyText} numberOfLines={1} ellipsizeMode="tail">{quickText}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Media Attachment Preview Bar */}
       {mediaUri && (
@@ -434,6 +461,29 @@ export const ChatScreen = () => {
           </TouchableOpacity>
         </View>
       </View>
+
+      <Modal
+        visible={!!fullscreenImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFullscreenImage(null)}
+      >
+        <View style={styles.fullscreenOverlay}>
+          <TouchableOpacity 
+            style={styles.fullscreenCloseBtn}
+            onPress={() => setFullscreenImage(null)}
+          >
+            <X size={24} color="#FFF" />
+          </TouchableOpacity>
+          {fullscreenImage && (
+            <FastImage
+              source={{ uri: fullscreenImage }}
+              style={styles.fullscreenImage}
+              resizeMode={FastImage.resizeMode.contain}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -616,17 +666,19 @@ const styles = StyleSheet.create({
     borderTopColor: '#2A2A2A',
   },
   quickReplyBtn: {
-    backgroundColor: '#2A2A2A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#1E1E1E',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#444444',
+    maxWidth: 250,
   },
   quickReplyText: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: 13,
+    color: '#D1D5DB',
+    fontWeight: '500',
   },
   attachmentPreviewBar: {
     flexDirection: 'row',
@@ -635,7 +687,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#bfdbfe',
+    borderTopColor: '#3A321E',
   },
   attachmentPreviewThumb: {
     width: 40,
@@ -719,5 +771,24 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     marginTop: 8,
+  },
+  fullscreenOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
   },
 });

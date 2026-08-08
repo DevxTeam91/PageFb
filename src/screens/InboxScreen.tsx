@@ -346,12 +346,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#2A2416',
+    backgroundColor: '#2A2A2A',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 4,
+    marginLeft: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#555555',
   },
   searchBox: {
     flexDirection: 'row',
@@ -360,6 +360,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     height: 40,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
@@ -398,8 +399,8 @@ const styles = StyleSheet.create({
     borderColor: '#333333',
   },
   filterPillActive: {
-    backgroundColor: '#e0e7ff',
-    borderColor: '#c7d2fe',
+    backgroundColor: '#D4AF37',
+    borderColor: '#D4AF37',
   },
   filterPillText: {
     fontSize: 12,
@@ -407,7 +408,7 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   filterPillTextActive: {
-    color: '#4f46e5',
+    color: '#1E1E1E',
   },
   listWrapper: {
     flex: 1,

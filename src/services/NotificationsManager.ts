@@ -9,7 +9,7 @@ import {
   AuthorizationStatus
 } from '@react-native-firebase/messaging';
 import { Platform } from 'react-native';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, EventType, AndroidStyle } from '@notifee/react-native';
 import * as api from './api'; // Ensure this points to the authenticated API class
 
 export class NotificationsManager {
@@ -82,6 +82,17 @@ export class NotificationsManager {
           }
         }
       });
+
+      // Handle local foreground notification tap
+      notifee.onForegroundEvent(({ type, detail }) => {
+        if (type === EventType.PRESS) {
+          console.log('[Notifications] Local notification pressed:', detail.notification);
+          const conversationId = detail.notification?.data?.conversationId;
+          if (conversationId && navigateFn) {
+            navigateFn(conversationId as string);
+          }
+        }
+      });
     } catch (e) {
       console.warn('[Notifications] Failed to setup listeners (native module missing)', e);
     }
@@ -92,21 +103,27 @@ export class NotificationsManager {
       if (Platform.OS === 'android') {
         await notifee.requestPermission();
         const channelId = await notifee.createChannel({
-          id: 'messages',
+          id: 'default',
           name: 'Messages',
           importance: AndroidImportance.HIGH,
         });
 
         await notifee.displayNotification({
-          title,
+          title: `<b>${title}</b>`,
           body,
           data: { conversationId },
           android: {
             channelId,
             importance: AndroidImportance.HIGH,
+            color: '#D4AF37', // Premium Gold Accent
+            style: {
+              type: AndroidStyle.BIGTEXT,
+              text: body,
+            },
             pressAction: {
               id: 'default',
             },
+            autoCancel: true,
           },
         });
       }

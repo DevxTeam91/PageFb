@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { AppState, AppStateStatus } from 'react-native';
 import { Conversation, Message, Rule, SettingsData, SyncStatus, PageData } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 import { networkManager } from '../services/NetworkManager';
 import {
   fetchConversations,
@@ -16,6 +17,7 @@ import {
   reorderRules,
   fetchSettings,
   updateGlobalAutoReply,
+  updateQuickReplies,
   verifyFacebookConnection,
   triggerSync,
   fetchPages,
@@ -57,6 +59,7 @@ interface GlobalStateContextType {
   handleDeleteRule: (id: string) => Promise<void>;
   handleReorderRules: (ruleIds: string[]) => Promise<void>;
   handleUpdateGlobalAutoReply: (enabled: boolean) => Promise<void>;
+  handleUpdateQuickReplies: (replies: string[]) => Promise<void>;
   handleVerifyFacebook: () => Promise<void>;
   handleTriggerSync: () => Promise<void>;
   forceSync: () => Promise<void>;
@@ -192,11 +195,41 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   }, []);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (isDeltaSync: boolean = false) => {
     try {
-      const list = await fetchConversations(undefined, selectedPageId);
-      setConversations(list);
-      AsyncStorage.setItem('@cache_conversations_' + selectedPageId, JSON.stringify(list)).catch(() => {});
+      let since: number | undefined = undefined;
+      
+      setConversations((prev) => {
+        if (isDeltaSync && prev.length > 0) {
+          since = Math.max(...prev.map(c => new Date(c.lastMessageAt || 0).getTime()));
+        }
+        return prev;
+      });
+
+      const list = await fetchConversations(undefined, selectedPageId, since);
+      if (list.length === 0 && isDeltaSync) return; // No new changes
+
+      setConversations((prev) => {
+        if (isDeltaSync) {
+          const copy = [...prev];
+          list.forEach((updatedConv) => {
+            const idx = copy.findIndex((c) => c.id === updatedConv.id);
+            if (idx >= 0) {
+              copy[idx] = { ...copy[idx], ...updatedConv };
+            } else {
+              copy.push(updatedConv);
+            }
+          });
+          return copy.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+        }
+        
+        // PURE TIME-BASED SORT
+        return list.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+      });
+      
+      if (!isDeltaSync) {
+        AsyncStorage.setItem('@cache_conversations_' + selectedPageId, JSON.stringify(list)).catch(() => {});
+      }
       
       await database.write(async () => {
         const batch = [];
@@ -205,7 +238,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
           if (existing) {
             batch.push(existing.prepareUpdate(c => {
               c.userName = conv.userName;
-              c.lastMessageAt = new Date(conv.lastMessageAt).getTime();
+              c.lastMessageAt = new Date(conv.lastMessageAt || new Date()).getTime();
               c.unread = conv.unread;
             }));
           } else {
@@ -214,18 +247,20 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
               c.psid = conv.psid;
               c.pageId = conv.pageId || '';
               c.userName = conv.userName;
-              c.lastMessageAt = new Date(conv.lastMessageAt).getTime();
+              c.lastMessageAt = new Date(conv.lastMessageAt || new Date()).getTime();
               c.unread = conv.unread;
             }));
           }
         }
-        await database.batch(batch);
+        if (batch.length > 0) await database.batch(batch);
       });
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       console.warn('Failed to load conversations, trying cache');
-      const cached = await AsyncStorage.getItem('@cache_conversations_' + selectedPageId);
-      if (cached) setConversations(JSON.parse(cached));
+      if (!isDeltaSync) {
+        const cached = await AsyncStorage.getItem('@cache_conversations_' + selectedPageId);
+        if (cached) setConversations(JSON.parse(cached));
+      }
     }
   }, [selectedPageId]);
 
@@ -301,9 +336,17 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (nextAppState === 'active') {
         console.log('[BackgroundSync] App foregrounded. Reconnecting socket & syncing...');
+        console.log('[BackgroundSync] App foregrounded. Reconnecting socket & running delta sync...');
         getSocket().connect();
-        loadConversations();
+        loadConversations(true); // Delta sync
         loadPages();
+        
+        // If user is currently viewing a chat, refresh its messages
+        if (selectedConvIdRef.current) {
+          fetchConversationMessages(selectedConvIdRef.current)
+            .then((data) => setMessages(deduplicateMessages(data.messages).reverse()))
+            .catch(console.warn);
+        }
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         console.log('[BackgroundSync] App backgrounded. Disconnecting socket.');
         getSocket().disconnect();
@@ -364,11 +407,26 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, [selectedConversationId]);
 
-  // Setup Socket.IO Realtime Listeners
+  const loadConversationsRef = useRef(loadConversations);
+  const loadPagesRef = useRef(loadPages);
+  
+  useEffect(() => {
+    loadConversationsRef.current = loadConversations;
+    loadPagesRef.current = loadPages;
+  }, [loadConversations, loadPages]);
+
+  // Setup Socket.IO Realtime Listeners (Runs ONCE on mount)
   useEffect(() => {
     const socket = getSocket();
 
-    const handleConnect = () => setSocketConnected(true);
+    const handleConnect = () => {
+      setSocketConnected(true);
+      if (socketTrigger > 0) {
+        // Delta sync on reconnect
+        console.log('[Realtime] Socket reconnected. Running delta sync...');
+        loadConversations(true);
+      }
+    };
     const handleDisconnect = () => setSocketConnected(false);
 
     setSocketConnected(socket.connected);
@@ -376,12 +434,69 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     socket.on('disconnect', handleDisconnect);
 
     const unsubscribe = subscribeToRealtimeEvents({
-      onNewMessage: ({ message, conversation }) => {
+      onNewMessage: async ({ message, conversation }) => {
+        const isCurrentlyViewed = selectedConvIdRef.current === conversation.id;
+        
+        // 1. WatermelonDB transaction FIRST
+        try {
+          await database.write(async () => {
+            const convCollection = database.get<ConversationModel>('conversations');
+            const msgCollection = database.get<MessageModel>('messages');
+            
+            // Deduplicate message
+            if (message.fbMessageId) {
+              const existing = await msgCollection.query(Q.where('fb_message_id', message.fbMessageId)).fetch();
+              if (existing.length > 0) {
+                console.log(`[Realtime][DB] duplicate msg skipped: messageId=${message.fbMessageId}`);
+                return;
+              }
+            }
+
+            // Upsert Conversation
+            let localConv;
+            try {
+              localConv = await convCollection.find(conversation.id);
+              await localConv.update((c) => {
+                c.lastMessageAt = new Date(message.createdAt || new Date()).getTime();
+                c.unread = !isCurrentlyViewed;
+              });
+            } catch (e) {
+              localConv = await convCollection.create((c) => {
+                c._raw.id = conversation.id;
+                c.psid = conversation.psid;
+                c.pageId = conversation.pageId;
+                c.userName = conversation.userName;
+                c.userAvatarUrl = conversation.userAvatarUrl;
+                c.lastMessageAt = new Date(message.createdAt || new Date()).getTime();
+                c.unread = !isCurrentlyViewed;
+              });
+              console.log(`[Realtime][Mobile] New conversation created locally: conversationId=${conversation.id}`);
+            }
+
+            // Insert Message
+            await msgCollection.create((m) => {
+              m._raw.id = message.id;
+              m.conversationId = conversation.id;
+              m.direction = message.direction;
+              m.text = message.text;
+              m.attachmentsJson = message.attachments ? JSON.stringify(message.attachments) : undefined;
+              m.fbMessageId = message.fbMessageId;
+              m.createdAt = new Date(message.createdAt || new Date()).getTime();
+            });
+            console.log(`[Realtime][WatermelonDB] upsertComplete=true messageId=${message.id} conversationId=${conversation.id}`);
+          });
+        } catch (dbErr) {
+          console.error('[Realtime][WatermelonDB] Error saving new message:', dbErr);
+        }
+
+        // 2. Observable UI Update (React State)
         setConversations((prev) => {
           const index = prev.findIndex((c) => c.id === conversation.id);
           const updatedConv = {
             ...conversation,
             lastMessage: message,
+            lastMessageAt: new Date(message.createdAt || new Date()).toISOString(),
+            unread: !isCurrentlyViewed,
           };
           let copy = [...prev];
           if (index >= 0) {
@@ -390,14 +505,13 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
           } else {
             copy = [updatedConv, ...copy];
           }
+          // PURE TIME-BASED SORT
           return copy.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
         });
 
-        if (selectedConvIdRef.current === conversation.id) {
-          // Add to front since list is inverted
+        if (isCurrentlyViewed) {
           setMessages((prev) => deduplicateMessages([message, ...prev]));
         } else {
-          // Trigger local heads-up notification since user is not actively viewing this conversation
           NotificationsManager.displayLocalNotification(
             `New message from ${conversation.userName}`,
             message.text || 'Sent an attachment',
@@ -405,15 +519,49 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
           );
         }
 
-        loadPages();
+        loadPagesRef.current();
       },
 
-      onNewReply: ({ message, conversationId }) => {
+      onNewReply: async ({ message, conversationId }) => {
+        // WatermelonDB transaction
+        try {
+          await database.write(async () => {
+            const convCollection = database.get<ConversationModel>('conversations');
+            const msgCollection = database.get<MessageModel>('messages');
+            
+            if (message.fbMessageId) {
+              const existing = await msgCollection.query(Q.where('fb_message_id', message.fbMessageId)).fetch();
+              if (existing.length > 0) return;
+            }
+
+            try {
+              const localConv = await convCollection.find(conversationId);
+              await localConv.update((c) => {
+                c.lastMessageAt = new Date(message.createdAt || new Date()).getTime();
+              });
+            } catch (e) {
+              console.warn('[Realtime][DB] Reply received for missing conversation:', conversationId);
+            }
+
+            await msgCollection.create((m) => {
+              m._raw.id = message.id;
+              m.conversationId = conversationId;
+              m.direction = message.direction;
+              m.text = message.text;
+              m.attachmentsJson = message.attachments ? JSON.stringify(message.attachments) : undefined;
+              m.fbMessageId = message.fbMessageId;
+              m.createdAt = new Date(message.createdAt || new Date()).getTime();
+            });
+          });
+        } catch (dbErr) {
+          console.error('[Realtime][WatermelonDB] Error saving new reply:', dbErr);
+        }
+
         setConversations((prev) => {
           const index = prev.findIndex((c) => c.id === conversationId);
           let copy = [...prev];
           if (index >= 0) {
-            const target = { ...prev[index], lastMessage: message, lastMessageAt: message.createdAt };
+            const target = { ...prev[index], lastMessage: message, lastMessageAt: new Date(message.createdAt || new Date()).toISOString() };
             copy.splice(index, 1);
             copy = [target, ...copy];
           }
@@ -421,7 +569,6 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         });
 
         if (selectedConvIdRef.current === conversationId) {
-          // Add to front since list is inverted
           setMessages((prev) => deduplicateMessages([message, ...prev]));
         }
       },
@@ -436,8 +583,8 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
       onSyncStatus: (status) => {
         setSyncStatus(status);
         if (!status.inProgress) {
-          loadConversations();
-          loadPages();
+          loadConversationsRef.current();
+          loadPagesRef.current();
         }
       },
     });
@@ -447,7 +594,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
       socket.off('disconnect', handleDisconnect);
       unsubscribe();
     };
-  }, [loadConversations, loadPages, socketTrigger]);
+  }, [socketTrigger]);
 
   // Handlers
   const handleSendReply = async (text?: string, mediaFile?: any) => {
@@ -555,6 +702,11 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
     setSettings((prev) => (prev ? { ...prev, globalAutoReply: newVal } : null));
   };
 
+  const handleUpdateQuickReplies = async (replies: string[]) => {
+    const newVal = await updateQuickReplies(replies);
+    setSettings((prev) => (prev ? { ...prev, quickReplies: newVal } : null));
+  };
+
   const handleVerifyFacebook = async () => {
     const status = await verifyFacebookConnection();
     setSettings((prev) =>
@@ -636,6 +788,7 @@ export const GlobalStateProvider: React.FC<{ children: ReactNode }> = ({ childre
         handleDeleteRule,
         handleReorderRules,
         handleUpdateGlobalAutoReply,
+        handleUpdateQuickReplies,
         handleVerifyFacebook,
         handleTriggerSync,
         forceSync,

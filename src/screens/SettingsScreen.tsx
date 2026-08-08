@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  TextInput,
 } from 'react-native';
 import {
   Bot,
@@ -20,6 +21,7 @@ import {
   Trash2,
   Volume2,
   ShieldCheck,
+  MessageSquare,
 } from 'lucide-react-native';
 import { useGlobalState } from '../context/GlobalStateContext';
 import { AddPageModal } from '../components/AddPageModal';
@@ -30,13 +32,38 @@ export const SettingsScreen = () => {
     syncStatus,
     pages,
     handleUpdateGlobalAutoReply,
+    handleUpdateQuickReplies,
     handleVerifyFacebook,
     handleTriggerSync,
     handleDeletePage,
+    loadPages,
+    loadConversations,
   } = useGlobalState();
 
   const [verifying, setVerifying] = useState(false);
   const [isAddPageModalOpen, setIsAddPageModalOpen] = useState(false);
+  const [newQuickReply, setNewQuickReply] = useState('');
+  
+  const handleAddQuickReply = async () => {
+    if (!newQuickReply.trim()) return;
+    try {
+      const updatedList = [...(settings?.quickReplies || []), newQuickReply.trim()];
+      await handleUpdateQuickReplies(updatedList);
+      setNewQuickReply('');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to add quick reply');
+    }
+  };
+
+  const handleDeleteQuickReply = async (index: number) => {
+    try {
+      const currentList = settings?.quickReplies || [];
+      const updatedList = currentList.filter((_, i) => i !== index);
+      await handleUpdateQuickReplies(updatedList);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to delete quick reply');
+    }
+  };
 
   const handleVerify = async () => {
     setVerifying(true);
@@ -148,6 +175,46 @@ export const SettingsScreen = () => {
                     <Trash2 size={16} color="#F87171" />
                   </TouchableOpacity>
                 )}
+              </View>
+            ))
+          )}
+        </View>
+      </View>
+
+      {/* Quick Replies Management */}
+      <View style={styles.card}>
+        <View style={styles.cardTitleGroup}>
+          <MessageSquare size={18} color="#D4AF37" />
+          <Text style={styles.cardTitle}>Quick Replies (Recommendations)</Text>
+        </View>
+        <Text style={styles.cardDesc}>
+          Set custom quick reply buttons that appear above your chat input.
+        </Text>
+        
+        <View style={styles.quickReplyInputContainer}>
+          <TextInput
+            style={styles.quickReplyInput}
+            placeholder="Type a quick reply..."
+            placeholderTextColor="#888"
+            value={newQuickReply}
+            onChangeText={setNewQuickReply}
+            onSubmitEditing={handleAddQuickReply}
+          />
+          <TouchableOpacity style={styles.quickReplyAddBtn} onPress={handleAddQuickReply}>
+            <Plus size={16} color="#1E1E1E" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.quickRepliesList}>
+          {settings?.quickReplies?.length === 0 || !settings?.quickReplies ? (
+            <Text style={styles.emptyQuickRepliesText}>No quick replies set.</Text>
+          ) : (
+            settings.quickReplies.map((reply, index) => (
+              <View key={index} style={styles.quickReplyItem}>
+                <Text style={styles.quickReplyItemText} numberOfLines={1} ellipsizeMode="tail">{reply}</Text>
+                <TouchableOpacity onPress={() => handleDeleteQuickReply(index)} style={styles.quickReplyDeleteBtn}>
+                  <Trash2 size={16} color="#F87171" />
+                </TouchableOpacity>
               </View>
             ))
           )}
@@ -284,7 +351,10 @@ export const SettingsScreen = () => {
       <AddPageModal
         visible={isAddPageModalOpen}
         onClose={() => setIsAddPageModalOpen(false)}
-        onPageAdded={() => {}}
+        onPageAdded={async () => {
+          await loadPages();
+          await loadConversations();
+        }}
       />
     </ScrollView>
   );
@@ -568,6 +638,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#F3F4F6',
     marginBottom: 6,
+  },
+  quickReplyInputContainer: {
+    flexDirection: 'row',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  quickReplyInput: {
+    flex: 1,
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    color: '#FFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+  },
+  quickReplyAddBtn: {
+    backgroundColor: '#D4AF37',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  quickRepliesList: {
+    marginTop: 4,
+  },
+  emptyQuickRepliesText: {
+    color: '#888',
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  quickReplyItem: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderLeftWidth: 3,
+    borderLeftColor: '#D4AF37',
+  },
+  quickReplyItemText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    flex: 1,
+    marginRight: 12,
+    lineHeight: 20,
+  },
+  quickReplyDeleteBtn: {
+    padding: 6,
+    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+    borderRadius: 6,
   },
   progressBarBg: {
     height: 6,

@@ -70,6 +70,7 @@ export interface FacebookStatus {
 
 export interface SettingsData {
   globalAutoReply: boolean;
+  quickReplies?: string[];
   facebookStatus: FacebookStatus;
   webhookConfig: {
     callbackPath: string;

@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Inbox, Settings, KeySquare } from 'lucide-react-native';
 import { NotificationsManager } from '../services/NotificationsManager';
+import { useGlobalState } from '../context/GlobalStateContext';
 
 // Screens
 import { InboxScreen } from '../screens/InboxScreen';
@@ -33,19 +34,20 @@ const InboxStack = () => {
 
 export const AppNavigator = () => {
   const navigationRef = createNavigationContainerRef();
+  const { setSelectedConversationId } = useGlobalState();
 
   useEffect(() => {
     // Only initialize notifications once the navigation container is ready
     NotificationsManager.init((conversationId) => {
+      setSelectedConversationId(conversationId);
       if (navigationRef.isReady()) {
         // @ts-ignore - dynamic routing cast
         navigationRef.navigate('Inbox', { 
-          screen: 'Chat', 
-          params: { conversationId } 
+          screen: 'Chat',
         });
       }
     });
-  }, []);
+  }, [setSelectedConversationId]);
 
   return (
     <NavigationContainer ref={navigationRef} theme={DarkTheme}>

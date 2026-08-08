@@ -12,7 +12,7 @@ export function getSocket(): Socket {
     socket = io(targetUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
-      reconnection: false, // Managed manually by NetworkObserver
+      reconnection: true, // Let Socket.IO handle ping timeouts
       forceNew: true,
     });
 

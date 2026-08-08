@@ -1,5 +1,5 @@
 import NetInfo, { NetInfoState, NetInfoSubscription } from '@react-native-community/netinfo';
-import { reconnectSocket, disconnectSocket, isSocketConnected } from './socket';
+import { getSocket, disconnectSocket, isSocketConnected } from './socket';
 
 type NetworkListener = (isConnected: boolean) => void;
 
@@ -71,8 +71,9 @@ class NetworkObserverService {
         return;
       }
 
-      console.log('[NetworkObserver] Executing reconnect...');
-      reconnectSocket();
+      console.log('[NetworkObserver] Executing socket.connect()...');
+      const s = getSocket();
+      s.connect();
       
       // We rely on socket.ts to emit events when connected.
       // If it fails to connect, socket.ts or GlobalStateContext will trigger another reconnect,
