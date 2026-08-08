@@ -3,6 +3,7 @@ import { app } from './app';
 import { getConfig } from './config';
 import { initSocket } from './socket';
 import { initializeSyncCron } from './workers/syncWorker';
+import { startRealtimeStreamer } from './services/realtimeStreamer';
 
 async function startServer() {
   try {
@@ -21,6 +22,9 @@ async function startServer() {
       console.log(`📡 Webhook endpoint: http://localhost:${port}/webhook/facebook`);
       console.log(`🔌 Socket.IO initialized`);
       console.log(`=================================================\n`);
+
+      // Start Graph API Fallback Poller
+      startRealtimeStreamer();
 
       // Attempt to subscribe Page to Webhook events via Meta Graph API
       try {
