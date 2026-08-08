@@ -444,19 +444,21 @@ export async function markConversationRead(conversationId: string) {
 /**
  * HIGH-SPEED SINGLE-QUERY REAL BACKFILL ENGINE FROM META GRAPH API
  */
-export async function backfillFromGraphApi(targetPageId?: string): Promise<{
+export async function backfillFromGraphApi(targetPageId?: string, quickSync: boolean = false): Promise<{
+  success: boolean;
   conversationsSynced: number;
   messagesSynced: number;
 }> {
   emitSyncStatus({ inProgress: true, message: 'Syncing real Facebook conversations...' });
+
+  let conversationsCount = 0;
+  let messagesCount = 0;
 
   try {
     const targetPages = targetPageId
       ? await prisma.page.findMany({ where: { id: targetPageId } })
       : await prisma.page.findMany({ where: { isActive: true } });
 
-    let conversationsCount = 0;
-    let messagesCount = 0;
     let hasRealData = false;
 
     for (let pageIdx = 0; pageIdx < targetPages.length; pageIdx++) {
@@ -477,7 +479,8 @@ export async function backfillFromGraphApi(targetPageId?: string): Promise<{
       }
       
       const sinceDate = page.lastSyncedAt ? new Date(page.lastSyncedAt) : undefined;
-      const fbConversations = await graphApiClient.fetchFullConversationsWithMessages(decryptedToken, page.pageId, 1000, sinceDate);
+      const maxItems = quickSync ? 20 : 1000;
+      const fbConversations = await graphApiClient.fetchFullConversationsWithMessages(decryptedToken, page.pageId, maxItems, sinceDate);
 
       if (fbConversations && fbConversations.length > 0) {
         hasRealData = true;
@@ -556,14 +559,9 @@ export async function backfillFromGraphApi(targetPageId?: string): Promise<{
       }).catch(() => {});
     }
 
-    emitSyncStatus({
-      inProgress: false,
-      total: targetPages.length,
-      synced: targetPages.length,
-      message: 'Real Facebook conversations synced successfully!',
-    });
-
+    emitSyncStatus({ inProgress: false, message: 'Sync complete' });
     return {
+      success: true,
       conversationsSynced: conversationsCount,
       messagesSynced: messagesCount,
     };
@@ -571,8 +569,12 @@ export async function backfillFromGraphApi(targetPageId?: string): Promise<{
     console.error('[Sync] Backfill error:', err);
     emitSyncStatus({
       inProgress: false,
-      message: `Sync completed.`,
+      message: `Sync failed: ${err.message}`,
     });
-    return { conversationsSynced: 0, messagesSynced: 0 };
+    return {
+      success: false,
+      conversationsSynced: conversationsCount,
+      messagesSynced: messagesCount,
+    };
   }
 }

@@ -250,8 +250,8 @@ router.post('/sync', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await backfillFromGraphApi(pageId);
-    return res.json({ success: true, ...result });
+    const result = await backfillFromGraphApi(pageId, !force);
+    return res.json(result);
   } catch (err: any) {
     console.error('[API] Error syncing conversations:', err);
     return res.status(500).json({ error: err.message || 'Failed to sync conversations' });

@@ -1,0 +1,1 @@
+import { PrismaClient } from '@prisma/client'; const prisma = new PrismaClient(); async function main() { const ahmad = await prisma.conversation.findFirst({ where: { userName: { contains: 'Ahmad' } } }); console.log('Ahmad:', JSON.stringify(ahmad, null, 2)); } main().finally(() => prisma.$disconnect());

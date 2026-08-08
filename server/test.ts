@@ -1,0 +1,1 @@
+import { PrismaClient } from '@prisma/client'; const prisma = new PrismaClient(); async function main() { const convs = await prisma.conversation.findMany({ take: 5, orderBy: { lastMessageAt: 'desc' } }); console.log(JSON.stringify(convs, null, 2)); } main().finally(() => prisma.$disconnect());
