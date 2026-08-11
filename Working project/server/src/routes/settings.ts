@@ -1,0 +1,254 @@
+import { Router, Request, Response } from 'express';
+import { prisma } from '../db';
+import { getConfig } from '../config';
+import { graphApiClient } from '../services/graphApi';
+import { exchangeForPermanentPageToken } from '../utils/tokenExchanger';
+
+const router = Router();
+
+/**
+ * GET /api/settings
+ * Fetch settings, global auto-reply status, and Meta connection status.
+ */
+router.get('/', async (_req: Request, res: Response) => {
+  try {
+    const config = getConfig();
+
+    // Get global auto-reply setting
+    const autoReplySetting = await prisma.setting.findUnique({
+      where: { key: 'global_auto_reply' },
+    });
+    const globalAutoReply = autoReplySetting ? autoReplySetting.value === 'true' : true;
+
+    // Get 23rd-hour follow-up settings
+    const { getFollowUpConfig } = await import('../services/followUpEngine');
+    const followUpConfig = await getFollowUpConfig();
+
+    // Check Facebook Graph API token health
+    let fbStatus: {
+      connected: boolean;
+      pageId?: string;
+      pageName?: string;
+      pagePicture?: string;
+      error?: string;
+    } = { connected: false };
+
+    try {
+      const pageDetails = await graphApiClient.getPageDetails();
+      fbStatus = {
+        connected: true,
+        pageId: pageDetails.id,
+        pageName: pageDetails.name,
+        pagePicture: pageDetails.picture?.data?.url,
+      };
+    } catch (err: any) {
+      fbStatus = {
+        connected: false,
+        error: err.message || 'Unable to connect to Facebook Graph API',
+      };
+    }
+
+    return res.json({
+      globalAutoReply,
+      followUpConfig,
+      facebookStatus: fbStatus,
+      webhookConfig: {
+        callbackPath: '/webhook/facebook',
+        verifyTokenSet: Boolean(config.VERIFY_TOKEN),
+        appSecretSet: Boolean(config.APP_SECRET),
+        pageAccessTokenSet: Boolean(config.PAGE_ACCESS_TOKEN),
+      },
+    });
+  } catch (err: any) {
+    console.error('[API] Error fetching settings:', err);
+    return res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+/**
+ * POST /api/settings
+ * Update settings (e.g. global auto-reply on/off, follow-up engine).
+ */
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { globalAutoReply, followUpEnabled, followUpHours, followUpTemplate } = req.body;
+
+    if (globalAutoReply !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'global_auto_reply' },
+        update: { value: String(globalAutoReply) },
+        create: { key: 'global_auto_reply', value: String(globalAutoReply) },
+      });
+    }
+
+    if (followUpEnabled !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'auto_followup_enabled' },
+        update: { value: String(followUpEnabled) },
+        create: { key: 'auto_followup_enabled', value: String(followUpEnabled) },
+      });
+    }
+
+    if (followUpHours !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'auto_followup_hours' },
+        update: { value: String(followUpHours) },
+        create: { key: 'auto_followup_hours', value: String(followUpHours) },
+      });
+    }
+
+    if (followUpTemplate !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'auto_followup_template' },
+        update: { value: String(followUpTemplate) },
+        create: { key: 'auto_followup_template', value: String(followUpTemplate) },
+      });
+    }
+
+    const { getFollowUpConfig } = await import('../services/followUpEngine');
+    const updatedFollowUp = await getFollowUpConfig();
+
+    return res.json({
+      success: true,
+      globalAutoReply: Boolean(globalAutoReply),
+      followUpConfig: updatedFollowUp,
+    });
+  } catch (err: any) {
+    console.error('[API] Error updating settings:', err);
+    return res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+/**
+ * POST /api/settings/trigger-followup-now
+ * Manually trigger follow-up re-engagement scan immediately.
+ */
+router.post('/trigger-followup-now', async (_req: Request, res: Response) => {
+  try {
+    const { checkAndSendFollowUps } = await import('../services/followUpEngine');
+    const count = await checkAndSendFollowUps();
+    return res.json({
+      success: true,
+      sentCount: count,
+      message: `Follow-up engine scan completed. Sent ${count} re-engagement messages.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to trigger follow-up scan',
+    });
+  }
+});
+
+/**
+ * GET /api/settings/verify-connection
+ * Check Facebook Graph API token live and auto-subscribe page to webhooks.
+ */
+router.get('/verify-connection', async (_req: Request, res: Response) => {
+  try {
+    const pageDetails = await graphApiClient.getPageDetails();
+    // Auto-subscribe page to webhook events
+    const subResult = await graphApiClient.subscribePageToWebhook();
+    
+    return res.json({
+      connected: true,
+      pageId: pageDetails.id,
+      pageName: pageDetails.name,
+      pagePicture: pageDetails.picture?.data?.url,
+      webhookSubscribed: subResult.success,
+      webhookMessage: subResult.message,
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      connected: false,
+      error: err.message || 'Failed to verify Facebook connection',
+    });
+  }
+});
+
+/**
+ * POST /api/settings/subscribe-webhook
+ * Manually trigger Meta Page Webhook subscription via Graph API
+ */
+router.post('/subscribe-webhook', async (_req: Request, res: Response) => {
+  try {
+    const subResult = await graphApiClient.subscribePageToWebhook();
+    return res.json(subResult);
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to subscribe page to webhooks',
+    });
+  }
+});
+
+/**
+ * POST /api/settings/generate-permanent-token
+ * Exchange any User or Short-Lived Token for a Never-Expiring Permanent Page Access Token.
+ */
+router.post('/generate-permanent-token', async (req: Request, res: Response) => {
+  try {
+    const { inputToken } = req.body;
+    if (!inputToken) {
+      return res.status(400).json({ error: 'inputToken is required' });
+    }
+
+    const result = await exchangeForPermanentPageToken(inputToken);
+    return res.json({
+      success: true,
+      ...result,
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      success: false,
+      error: err.message || 'Failed to exchange token for permanent token',
+    });
+  }
+});
+
+/**
+ * GET /api/settings/diagnostics
+ * Test every Meta endpoint live and report exact statuses.
+ */
+router.get('/diagnostics', async (_req: Request, res: Response) => {
+  const token = (getConfig().PAGE_ACCESS_TOKEN || '').trim();
+  const secret = (getConfig().APP_SECRET || '').trim();
+  const page = await graphApiClient.getPageDetails().catch((e: any) => ({ error: e.message }));
+  const pageId = (page as any)?.id || '752790171249695';
+
+  const testUrls = [
+    `https://graph.facebook.com/v19.0/${pageId}/conversations?access_token=${token}`,
+    `https://graph.facebook.com/v21.0/${pageId}/conversations?access_token=${token}`,
+    `https://graph.facebook.com/v22.0/${pageId}/conversations?access_token=${token}`,
+    `https://graph.facebook.com/v19.0/me/conversations?access_token=${token}`,
+    `https://graph.facebook.com/v21.0/me/conversations?access_token=${token}`,
+    `https://graph.facebook.com/v19.0/${pageId}?fields=conversations&access_token=${token}`,
+    `https://graph.facebook.com/v19.0/me?fields=conversations&access_token=${token}`,
+  ];
+
+  const results: any[] = [];
+  for (const url of testUrls) {
+    try {
+      const response = await fetch(url, { headers: { 'User-Agent': 'FBPageUnifiedInbox/1.0' } });
+      const body = (await response.json()) as any;
+      results.push({
+        url: url.replace(token, 'TOKEN_MASKED'),
+        status: response.status,
+        hasData: Array.isArray(body?.data) || Boolean(body?.conversations?.data),
+        dataLength: body?.data?.length || body?.conversations?.data?.length || 0,
+        body,
+      });
+    } catch (err: any) {
+      results.push({ url: url.replace(token, 'TOKEN_MASKED'), error: err.message });
+    }
+  }
+
+  return res.json({
+    tokenLength: token.length,
+    secretLength: secret.length,
+    page,
+    results,
+  });
+});
+
+export default router;

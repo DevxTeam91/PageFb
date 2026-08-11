@@ -156,11 +156,11 @@ export async function fetchPages(): Promise<PageData[]> {
   return res.json();
 }
 
-export async function addPage(token: string, name?: string, pageId?: string): Promise<{ success: boolean; page: PageData }> {
+export async function addPage(token: string, name?: string, pageId?: string, appId?: string, appSecret?: string): Promise<{ success: boolean; page: PageData }> {
   const res = await networkManager.fetchWithRetry(`/pages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, name, pageId }),
+    body: JSON.stringify({ token, name, pageId, appId, appSecret }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to add page' }));

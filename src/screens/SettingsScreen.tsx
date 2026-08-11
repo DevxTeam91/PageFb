@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -22,6 +23,7 @@ import {
   Volume2,
   ShieldCheck,
   MessageSquare,
+  LogOut,
 } from 'lucide-react-native';
 import { useGlobalState } from '../context/GlobalStateContext';
 import { AddPageModal } from '../components/AddPageModal';
@@ -75,6 +77,29 @@ export const SettingsScreen = () => {
     } finally {
       setVerifying(false);
     }
+  };
+
+  const handleResetPage = () => {
+    Alert.alert(
+      'Change Page',
+      'This will disconnect this phone from the current page. You will need to enter new credentials. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { clearAllCredentials } = await import('../services/SecureStorage');
+              await clearAllCredentials();
+              Alert.alert('Done', 'Please close and reopen the app to set up a new page.');
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to reset.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const confirmDeletePage = (id: string, pageName: string) => {
@@ -179,6 +204,24 @@ export const SettingsScreen = () => {
             ))
           )}
         </View>
+      </View>
+
+      {/* Change Page (Device Reset) */}
+      <View style={styles.card}>
+        <View style={styles.cardTitleGroup}>
+          <LogOut size={18} color="#F87171" />
+          <Text style={[styles.cardTitle, { color: '#F87171' }]}>Change Page (This Phone)</Text>
+        </View>
+        <Text style={styles.cardDesc}>
+          This phone is locked to one page. To connect a different page, reset below.
+        </Text>
+        <TouchableOpacity
+          style={[styles.addPageBtn, { backgroundColor: '#F87171', marginTop: 12, alignSelf: 'flex-start' }]}
+          onPress={handleResetPage}
+        >
+          <LogOut size={14} color="#fff" style={{ marginRight: 4 }} />
+          <Text style={[styles.addPageBtnText, { color: '#fff' }]}>Reset & Change Page</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Quick Replies Management */}
