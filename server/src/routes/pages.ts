@@ -110,16 +110,13 @@ router.get('/', async (_req: Request, res: Response) => {
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { token } = req.body;
+    const { token, appId, appSecret } = req.body;
 
     if (!token) {
       return res.status(400).json({ error: 'Access token is required' });
     }
 
-    // 1. Permanently persist primary token to root .env
-    persistTokenToEnv(token.trim());
-
-    // 2. Fetch ALL business pages accessible via /me/accounts
+    // 1. Fetch ALL business pages accessible via /me/accounts
     const discoveredPages = await fetchAllPagesFromToken(token);
 
     if (!discoveredPages || discoveredPages.length === 0) {
@@ -129,12 +126,16 @@ router.post('/', async (req: Request, res: Response) => {
     const savedPages = [];
     for (const p of discoveredPages) {
       const encryptedToken = encryptToken(p.accessToken);
+      // Encrypt appSecret if provided
+      const encryptedSecret = appSecret ? encryptToken(appSecret) : undefined;
+
       const page = await prisma.page.upsert({
         where: { pageId: p.pageId },
         update: {
           name: p.name,
           accessToken: encryptedToken,
           ...(p.pictureUrl && { pictureUrl: p.pictureUrl }),
+          ...(encryptedSecret && { appSecret: encryptedSecret }),
           isActive: true,
         },
         create: {
@@ -142,6 +143,7 @@ router.post('/', async (req: Request, res: Response) => {
           name: p.name,
           accessToken: encryptedToken,
           pictureUrl: p.pictureUrl,
+          appSecret: encryptedSecret,
           isActive: true,
         },
       });
