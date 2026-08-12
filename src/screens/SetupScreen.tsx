@@ -81,15 +81,11 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => 
     setLoading(true);
     try {
       const installationId = await getOrCreateInstallationId();
-
-      // Save sensitive credentials to Keychain
       await saveCredentials({
         appId: appId.trim(),
         appSecret: appSecret.trim(),
         pageAccessToken: pageAccessToken.trim(),
       });
-
-      // Save non-sensitive config to AsyncStorage
       await savePageConfig({
         pageId: page.pageId,
         pageDbId: page.id,
@@ -97,12 +93,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => 
         appId: appId.trim(),
         installationId,
       });
-
-      console.log(`[Installation] id=${installationId} configured pageId=${page.pageId}`);
-
-      onSetupComplete(page.id, page.pageId);
+      await onSetupComplete(page.id, page.pageId);
     } catch (err: any) {
-      Alert.alert('Save Failed', err.message || 'Could not save configuration.');
+      Alert.alert('Setup Failed', err?.message || 'Could not save configuration.');
     } finally {
       setLoading(false);
     }
