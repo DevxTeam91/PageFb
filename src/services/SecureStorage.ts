@@ -1,36 +1,29 @@
 /**
- * SecureStorage — wraps react-native-keychain for sensitive credentials.
+ * SecureStorage — credential storage for per-installation page config.
  *
- * Sensitive (stored in Keychain / Android Keystore):
- *   - pageAccessToken
- *   - appSecret
- *
- * Non-sensitive (stored in AsyncStorage):
- *   - pageId, pageName, appId, installationId
+ * For simplicity (personal/private app), credentials are stored in AsyncStorage.
+ * Sensitive fields (appSecret, pageAccessToken) are kept separate from UI state.
  */
 
-import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
-const KEYCHAIN_SERVICE = 'com.fbpageinbox.credentials';
-const ASYNC_KEY_PAGE_ID = '@my_page_id';
-const ASYNC_KEY_PAGE_NAME = '@my_page_name';
-const ASYNC_KEY_APP_ID = '@my_app_id';
-const ASYNC_KEY_INSTALLATION_ID = '@installation_id';
+const KEY_PAGE_DB_ID    = '@my_page_id';
+const KEY_PAGE_NAME     = '@my_page_name';
+const KEY_APP_ID        = '@my_app_id';
+const KEY_FB_PAGE_ID    = '@my_fb_page_id';
+const KEY_INSTALLATION  = '@installation_id';
+const KEY_CREDENTIALS   = '@page_credentials'; // JSON: { appSecret, pageAccessToken }
 
 export interface InstallationConfig {
-  pageId: string;         // Facebook Page ID (e.g. "752790171249695")
-  pageDbId: string;       // Backend DB record id
+  pageId: string;     // Facebook Page ID (e.g. "752790171249695")
+  pageDbId: string;   // Backend DB record id
   pageName: string;
   appId: string;
   installationId: string;
-  // appSecret and pageAccessToken are stored in Keychain only
 }
 
 /**
- * Save sensitive credentials to Keychain.
- * username = appId, password = JSON of { appSecret, pageAccessToken }
+ * Save sensitive credentials.
  */
 export async function saveCredentials(params: {
   appId: string;
@@ -41,15 +34,11 @@ export async function saveCredentials(params: {
     appSecret: params.appSecret,
     pageAccessToken: params.pageAccessToken,
   });
-
-  await Keychain.setGenericPassword(params.appId, payload, {
-    service: KEYCHAIN_SERVICE,
-    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
+  await AsyncStorage.setItem(KEY_CREDENTIALS, payload);
 }
 
 /**
- * Load credentials from Keychain.
+ * Load credentials.
  */
 export async function loadCredentials(): Promise<{
   appId: string;
@@ -57,12 +46,12 @@ export async function loadCredentials(): Promise<{
   pageAccessToken: string;
 } | null> {
   try {
-    const result = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
-    if (!result) return null;
-
-    const parsed = JSON.parse(result.password);
+    const appId = await AsyncStorage.getItem(KEY_APP_ID);
+    const raw = await AsyncStorage.getItem(KEY_CREDENTIALS);
+    if (!raw || !appId) return null;
+    const parsed = JSON.parse(raw);
     return {
-      appId: result.username,
+      appId,
       appSecret: parsed.appSecret || '',
       pageAccessToken: parsed.pageAccessToken || '',
     };
@@ -72,7 +61,7 @@ export async function loadCredentials(): Promise<{
 }
 
 /**
- * Save non-sensitive page config to AsyncStorage.
+ * Save non-sensitive page config.
  */
 export async function savePageConfig(params: {
   pageId: string;
@@ -82,53 +71,54 @@ export async function savePageConfig(params: {
   installationId: string;
 }): Promise<void> {
   await AsyncStorage.multiSet([
-    [ASYNC_KEY_PAGE_ID, params.pageDbId],    // backend DB id used for API filtering
-    [ASYNC_KEY_PAGE_NAME, params.pageName],
-    [ASYNC_KEY_APP_ID, params.appId],
-    [ASYNC_KEY_INSTALLATION_ID, params.installationId],
-    ['@my_fb_page_id', params.pageId],       // raw Facebook page ID
+    [KEY_PAGE_DB_ID,   params.pageDbId],
+    [KEY_PAGE_NAME,    params.pageName],
+    [KEY_APP_ID,       params.appId],
+    [KEY_INSTALLATION, params.installationId],
+    [KEY_FB_PAGE_ID,   params.pageId],
   ]);
 }
 
 /**
- * Load non-sensitive page config from AsyncStorage.
+ * Load page config.
  */
 export async function loadPageConfig(): Promise<InstallationConfig | null> {
   const results = await AsyncStorage.multiGet([
-    ASYNC_KEY_PAGE_ID,
-    ASYNC_KEY_PAGE_NAME,
-    ASYNC_KEY_APP_ID,
-    ASYNC_KEY_INSTALLATION_ID,
-    '@my_fb_page_id',
+    KEY_PAGE_DB_ID,
+    KEY_PAGE_NAME,
+    KEY_APP_ID,
+    KEY_INSTALLATION,
+    KEY_FB_PAGE_ID,
   ]);
 
-  const map = Object.fromEntries(results.map(([k, v]) => [k, v]));
+  const map: Record<string, string | null> = {};
+  results.forEach(([k, v]) => { map[k] = v; });
 
-  const pageDbId = map[ASYNC_KEY_PAGE_ID];
+  const pageDbId = map[KEY_PAGE_DB_ID];
   if (!pageDbId) return null;
 
   return {
-    pageId: map['@my_fb_page_id'] || '',
+    pageId:         map[KEY_FB_PAGE_ID]   || '',
     pageDbId,
-    pageName: map[ASYNC_KEY_PAGE_NAME] || 'My Page',
-    appId: map[ASYNC_KEY_APP_ID] || '',
-    installationId: map[ASYNC_KEY_INSTALLATION_ID] || '',
+    pageName:       map[KEY_PAGE_NAME]    || 'My Page',
+    appId:          map[KEY_APP_ID]       || '',
+    installationId: map[KEY_INSTALLATION] || '',
   };
 }
 
 /**
- * Clear all credentials — used on "Change Page" / Disconnect.
+ * Clear all stored credentials and config.
  */
 export async function clearAllCredentials(): Promise<void> {
-  await Keychain.resetGenericPassword({ service: KEYCHAIN_SERVICE });
   await AsyncStorage.multiRemove([
-    ASYNC_KEY_PAGE_ID,
-    ASYNC_KEY_PAGE_NAME,
-    ASYNC_KEY_APP_ID,
-    ASYNC_KEY_INSTALLATION_ID,
-    '@my_fb_page_id',
-    '@my_page_id',     // legacy key from earlier SetupScreen
-    '@my_page_name',   // legacy key
+    KEY_PAGE_DB_ID,
+    KEY_PAGE_NAME,
+    KEY_APP_ID,
+    KEY_INSTALLATION,
+    KEY_FB_PAGE_ID,
+    KEY_CREDENTIALS,
+    '@my_page_id',    // legacy
+    '@my_page_name',  // legacy
   ]);
 }
 
@@ -136,16 +126,15 @@ export async function clearAllCredentials(): Promise<void> {
  * Get or generate a persistent installation UUID.
  */
 export async function getOrCreateInstallationId(): Promise<string> {
-  const existing = await AsyncStorage.getItem(ASYNC_KEY_INSTALLATION_ID);
+  const existing = await AsyncStorage.getItem(KEY_INSTALLATION);
   if (existing) return existing;
 
-  // Generate a simple UUID v4
   const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 
-  await AsyncStorage.setItem(ASYNC_KEY_INSTALLATION_ID, uuid);
+  await AsyncStorage.setItem(KEY_INSTALLATION, uuid);
   return uuid;
 }
